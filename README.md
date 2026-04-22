@@ -1,7 +1,7 @@
 # claude-bouncer
 
-Claude Code 세션이 응답을 끝내거나 입력을 기다릴 때, 귀여운 펫이 화면 위로 튀어올라 알려주는 macOS 데스크탑 알림 앱.
-A cute desktop pet for macOS that bounces to notify you when any Claude Code session finishes responding or is waiting for your input.
+Claude Code 세션이 응답을 끝내거나 입력을 기다릴 때, 귀여운 펫이 화면 위로 튀어올라 알려주는 데스크탑 알림 앱 (macOS / Windows).
+A cute desktop pet for macOS and Windows that bounces to notify you when any Claude Code session finishes responding or is waiting for your input.
 
 https://github.com/user-attachments/assets/ff363262-e4e2-40e7-8406-261baa0feb7f
 
@@ -20,87 +20,112 @@ If you run multiple Claude Code sessions and keep switching back to check if the
 - 🐾 **통통 튀는 펫** — Stop / Notification 이벤트에 맞춰 화면 우하단에서 바운스
 - 🖥️ **멀티 디스플레이 대응** — 커서가 있는 모니터로 펫이 따라옴
 - 🪟 **전체화면 위에서도 표시** — macOS Space를 넘나들며 항상 최상위
-- 🎯 **원클릭 복귀** — 펫 클릭 시 해당 세션의 터미널(iTerm2 / Terminal / VSCode / Cursor / Warp / Ghostty) 활성화
+- 🎯 **원클릭 복귀** — 펫 클릭 시 해당 세션의 터미널 활성화
+  - macOS: iTerm2 / Terminal / VSCode / Cursor / Warp / Ghostty (iTerm2는 정확한 탭까지)
+  - Windows: Windows Terminal / VSCode / Cursor / Hyper (앱 활성화)
 - 📜 **히스토리 패널** — 최근 50개 알림 기록, 트레이 아이콘 클릭으로 열기
 - 🔀 **세션 구분** — `TERM_SESSION_ID`, `tmux`, `ppid`까지 써서 같은 cwd의 여러 세션 식별
 - 🧹 **자동 훅 관리** — 설치/삭제 스크립트가 `~/.claude/settings.json`을 안전하게 편집
+- 🌍 **의존성 최소화** — Node.js만 있으면 OK (jq/curl 같은 외부 CLI 불필요)
 
 ---
 
 ## 요구사항 / Requirements
 
-| | 설명 / Note | 확인 / Check |
-|---|---|---|
-| macOS | Darwin 전용 (Windows/Linux 미지원) | `uname` |
-| Node.js 18+ | Electron 실행용 | `node -v` |
-| npm | Node.js에 포함 | `npm -v` |
-| jq | 훅에서 JSON 가공에 사용 | `jq --version` |
-| Claude Code | 알림 대상 | `claude --version` |
+| | 설명 / Note |
+|---|---|
+| OS | macOS 또는 Windows 10/11 |
+| Node.js 18+ | Electron 실행 및 훅 디스패처 |
+| Claude Code | 알림 대상 |
+
+확인 / Check:
+```bash
+node -v        # v18.x 이상
+npm -v
+claude --version
+```
 
 ---
 
-## 처음 쓰시나요? 설치 가이드 / First-time setup
+## 설치 가이드 / Installation
 
-### 1. Node.js 설치 / Install Node.js
+### macOS
 
-제일 쉬운 방법 — [Homebrew](https://brew.sh)로 설치:
-The easiest way — install via [Homebrew](https://brew.sh):
+#### 1. Node.js 설치 / Install Node.js
 
+[Homebrew](https://brew.sh)로:
 ```bash
-# Homebrew가 없다면 먼저 설치 / Install Homebrew if you don't have it
+# Homebrew가 없다면 / If you don't have Homebrew
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-# Node.js 설치 / Install Node.js
 brew install node
 ```
 
-또는 공식 설치파일: https://nodejs.org (LTS 버전 권장)
-Or the official installer: https://nodejs.org (LTS recommended)
+또는 공식 설치파일: https://nodejs.org (LTS 권장)
 
-### 2. jq 설치 / Install jq
-
-```bash
-brew install jq
-```
-
-### 3. 이 프로젝트 받기 / Get this project
+#### 2. 프로젝트 받기 & 실행 / Clone & run
 
 ```bash
 git clone https://github.com/ESeungJun/claude-bouncer.git
 cd claude-bouncer
-```
-
-### 4. 실행 / Run
-
-Finder에서 `start.command` 파일을 **더블클릭**하거나, 터미널에서:
-Double-click `start.command` in Finder, or in terminal:
-
-```bash
 ./start.command
 ```
 
-처음 실행하면 자동으로:
-- `npm install`로 Electron 등 의존성 설치
-- Claude Code 훅을 `~/.claude/settings.json`에 등록
-- 앱 실행 → 메뉴바에 🎭 아이콘 등장
+Finder에서 `start.command`를 **더블클릭**해도 됩니다. 처음 실행 시 `npm install` + 훅 설치가 자동으로 진행돼요.
+You can also double-click `start.command` in Finder. First run will install dependencies and the hook automatically.
 
-On first run it will automatically:
-- Run `npm install` to fetch Electron and dependencies
-- Install the Claude Code hook into `~/.claude/settings.json`
-- Launch the app — look for the 🎭 icon in the menu bar
+### Windows
 
-### 5. 테스트 / Test it
+#### 1. Node.js 설치 / Install Node.js
 
-메뉴바 아이콘 **우클릭 → Test bounce** 를 눌러보세요. 펫이 튀면 정상. 그 다음 아무 터미널에서 Claude Code를 쓰고 응답이 끝나는 순간을 기다려보세요.
+https://nodejs.org 에서 LTS 설치파일(.msi)을 받아서 실행. 설치 도중 "Add to PATH" 옵션이 체크되어 있는지 확인하세요.
+Download the LTS installer from https://nodejs.org and run it. Make sure "Add to PATH" is checked during installation.
 
-Right-click the menu bar icon → **Test bounce**. If the pet jumps, you're set. Then run Claude Code in any terminal and wait for it to finish responding.
+설치 후 PowerShell이나 cmd에서 확인:
+```
+node -v
+npm -v
+```
+
+#### 2. Git 설치 (없다면) / Install Git if needed
+
+https://git-scm.com/download/win
+
+#### 3. 프로젝트 받기 & 실행 / Clone & run
+
+PowerShell 또는 cmd:
+```
+git clone https://github.com/ESeungJun/claude-bouncer.git
+cd claude-bouncer
+start.bat
+```
+
+또는 탐색기에서 `start.bat`을 **더블클릭**. 처음 실행 시 의존성 설치 + 훅 등록이 자동 진행됩니다.
+Or double-click `start.bat` in Explorer. Dependencies and the hook will be installed automatically on first run.
+
+> **참고**: Windows Defender SmartScreen이 처음에 경고할 수 있어요. "추가 정보" → "실행"을 누르면 다음부턴 뜨지 않습니다.
+> **Note**: Windows Defender SmartScreen may warn on first run. Click "More info" → "Run anyway" and it won't ask again.
+
+---
+
+## 테스트 / Test it
+
+앱이 시작되면 트레이(macOS: 메뉴바 상단, Windows: 작업 표시줄 우측) 아이콘이 생깁니다.
+
+- 아이콘 **우클릭 → Test bounce** 를 눌러 펫이 튀는지 확인
+- 아무 터미널에서 Claude Code를 실행하고 응답이 끝나는 순간을 관찰
+
+Once the app is running, look for the tray icon (macOS: top menu bar, Windows: bottom-right tray).
+
+- Right-click → **Test bounce** to verify the pet jumps
+- Run Claude Code in any terminal and wait for a response to finish
 
 ---
 
 ## 사용법 / Usage
 
-- 🖱️ **펫 드래그**: 원하는 위치로 옮길 수 있음
-- 🖱️ **펫 클릭**: 알림을 보낸 터미널로 복귀
+- 🖱️ **펫 드래그**: 원하는 위치로 이동
+- 🖱️ **펫 클릭**: 알림을 보낸 터미널로 점프
 - 🎭 **트레이 아이콘 클릭**: 히스토리 패널 토글
 - **우클릭 메뉴**:
   - `Show panel` — 히스토리 패널 열기
@@ -109,15 +134,22 @@ Right-click the menu bar icon → **Test bounce**. If the pet jumps, you're set.
 
 ### 동작 원리 / How it works
 
-1. 설치 스크립트가 Claude Code의 `Stop`과 `Notification` 훅에 명령어를 등록
-2. Claude Code 세션 종료/대기 시, 훅이 JSON 페이로드를 `http://127.0.0.1:17891/notify`로 POST
-3. 앱은 이를 받아 히스토리에 저장하고, 펫을 커서가 있는 디스플레이 우하단에서 바운스
-4. 펫 클릭 시 페이로드의 `TERM_PROGRAM` / `TERM_SESSION_ID` 기반으로 AppleScript가 터미널을 활성화
+1. 설치 스크립트가 Claude Code의 `Stop`과 `Notification` 훅에 `node send-notify.js` 명령을 등록
+2. 세션이 종료되거나 입력을 기다릴 때, 훅이 JSON을 `http://127.0.0.1:17891/notify`로 POST
+3. 앱은 이를 받아 히스토리에 저장하고, 커서가 있는 디스플레이 우하단에서 펫을 바운스
+4. 펫 클릭 시 OS별 방법으로 해당 터미널 활성화
+   - macOS: AppleScript (iTerm2는 `unique id`로 정확한 세션 선택)
+   - Windows: PowerShell `AppActivate`로 윈도우 활성화
 
-1. The installer registers a command in Claude Code's `Stop` and `Notification` hooks
-2. When a session stops or waits for input, the hook POSTs a JSON payload to `http://127.0.0.1:17891/notify`
-3. The app stores it in history and bounces the pet on the display with the cursor
-4. Clicking the pet runs an AppleScript that activates the source terminal based on `TERM_PROGRAM` / `TERM_SESSION_ID`
+1. Installer registers a `node send-notify.js` command in Claude Code's `Stop` and `Notification` hooks
+2. When a session stops or waits for input, the hook POSTs JSON to `http://127.0.0.1:17891/notify`
+3. The app stores it in history and bounces the pet on the display that currently has the cursor
+4. Clicking the pet activates the source terminal per-OS
+   - macOS: AppleScript (iTerm2 targets the exact session by `unique id`)
+   - Windows: PowerShell `AppActivate` raises the app window
+
+훅 자체는 외부 CLI(jq, curl) 없이 Node만 사용하므로 설치 부담이 적고 OS 간 동작이 일관됩니다.
+The hook uses only Node — no external CLIs like jq/curl — so installation is light and behavior is consistent across OSes.
 
 ---
 
@@ -131,8 +163,7 @@ npm run uninstall-hook
 완전 제거 / Full removal:
 ```bash
 npm run uninstall-hook
-cd ..
-rm -rf claude-bouncer
+# 이후 프로젝트 폴더 삭제 / then delete the project folder
 ```
 
 ---
@@ -140,21 +171,26 @@ rm -rf claude-bouncer
 ## 문제 해결 / Troubleshooting
 
 **펫이 안 뜨는데? / Pet doesn't appear?**
-- 메뉴바에 아이콘이 있는지 확인 — 있으면 `Test bounce`로 테스트
-- `~/.claude/settings.json`에 `127.0.0.1:17891/notify`를 포함한 훅이 있는지 확인
-- Check menu bar for icon, then try `Test bounce`. Verify your `~/.claude/settings.json` has a hook containing `127.0.0.1:17891/notify`.
+- 트레이에 아이콘이 있는지 확인. 있으면 `Test bounce`로 테스트
+- `~/.claude/settings.json`에 `send-notify.js`를 포함한 훅이 있는지 확인
+- Check the tray for the icon and try `Test bounce`. Verify `~/.claude/settings.json` has a hook referencing `send-notify.js`.
 
-**`jq: command not found`**
-- `brew install jq` 실행 — 없으면 훅이 조용히 실패해요 (Claude 세션엔 영향 없음)
-- Run `brew install jq`. Without it the hook silently fails (doesn't affect Claude itself).
+**macOS: "확인되지 않은 개발자" 경고 / Unidentified developer warning**
+- `start.command` 우클릭 → 열기 한 번만 하면 다음부턴 안 뜸
+- Right-click `start.command` → Open once.
 
-**"확인되지 않은 개발자" 경고 / "Unidentified developer" warning**
-- `start.command` 우클릭 → 열기 한 번만 하면 그 뒤론 경고 안 뜸
-- Right-click `start.command` → Open once. The warning won't appear again.
+**Windows: SmartScreen 경고 / SmartScreen warning**
+- "추가 정보" → "실행"
+- "More info" → "Run anyway".
 
 **포트 17891이 이미 사용 중 / Port 17891 already in use**
-- 다른 프로세스가 쓰고 있음. `lsof -i :17891`로 확인
-- Another process is using it. Run `lsof -i :17891` to find it.
+- macOS/Linux: `lsof -i :17891`
+- Windows: `netstat -ano | findstr :17891`
+- 충돌하는 프로세스 종료 후 재시작
+
+**`node` 명령어를 찾을 수 없음 / `node` command not found**
+- Node.js 설치 확인. Windows는 설치 시 "Add to PATH" 체크 필수
+- Verify Node.js is installed and on PATH. On Windows, re-run the installer with "Add to PATH" checked.
 
 ---
 

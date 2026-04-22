@@ -340,12 +340,33 @@ async function focusTerminalMac(entry) {
   if (entry.cwd) shell.openPath(entry.cwd)
 }
 
+// Windows equivalent — AppActivate by window title. We can't target a specific
+// terminal tab like iTerm2, but we can raise the right app. Falls through to
+// opening the cwd folder when we don't recognize the terminal.
+async function focusTerminalWin(entry) {
+  const term = String(entry.termProgram || '')
+  let title = null
+  if (/WindowsTerminal|wt/i.test(term)) title = 'Windows Terminal'
+  else if (/cursor/i.test(term)) title = 'Cursor'
+  else if (/vscode|Code/i.test(term)) title = 'Visual Studio Code'
+  else if (/Hyper/i.test(term)) title = 'Hyper'
+
+  if (title) {
+    const safeTitle = title.replace(/'/g, "''")
+    const script = `(New-Object -ComObject WScript.Shell).AppActivate('${safeTitle}') | Out-Null`
+    return new Promise((resolve) => {
+      execFile('powershell', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', script],
+        { timeout: 3000 }, () => resolve())
+    })
+  }
+  if (entry.cwd) shell.openPath(entry.cwd)
+}
+
 ipcMain.handle('focus-terminal', async (_, entry) => {
   if (!entry || typeof entry !== 'object') return
-  if (process.platform === 'darwin') {
-    return focusTerminalMac(entry)
-  }
-  // Non-darwin fallback: open the folder
+  if (process.platform === 'darwin') return focusTerminalMac(entry)
+  if (process.platform === 'win32') return focusTerminalWin(entry)
+  // Linux fallback: open the folder
   if (entry.cwd) shell.openPath(entry.cwd)
 })
 

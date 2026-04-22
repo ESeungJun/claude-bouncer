@@ -9,28 +9,16 @@ const path = require('path')
 const os = require('os')
 
 const settingsPath = path.join(os.homedir(), '.claude', 'settings.json')
-const MARKER = '127.0.0.1:17891/notify'
+const sendNotifyPath = path.resolve(__dirname, 'send-notify.js')
+// Unique substring used to find & remove any previous claude-bouncer hook entry.
+const MARKER = 'claude-bouncer/scripts/send-notify.js'
 
-// Enrich the hook JSON with terminal info ($TERM_PROGRAM, session id, tmux, ppid)
-// so the app can tell apart multiple terminals sitting in the same cwd.
-// `kind` tells the UI whether this is a finish ("stop") or a blocking prompt
-// ("notification" — Claude is waiting on the user for permission/input).
-// jq --arg treats unset env vars as "". curl -m 2 caps the request at 2s.
-// || true so the hook never fails a Claude session, even if the app isn't running.
+// The hook just calls Node with our cross-platform dispatcher. No jq/curl needed,
+// no shell-specific env var syntax — same command works on macOS, Linux, Windows.
 function buildHookCommand(kind) {
-  return (
-    `jq -c ` +
-    `--arg kind "${kind}" ` +
-    `--arg tp "$TERM_PROGRAM" ` +
-    `--arg tsid "$TERM_SESSION_ID" ` +
-    `--arg itsid "$ITERM_SESSION_ID" ` +
-    `--arg tmux "$TMUX" ` +
-    `--arg ppid "$PPID" ` +
-    `'. + {kind: $kind, term_program: $tp, term_session_id: (if $tsid != "" then $tsid else $itsid end), tmux: $tmux, ppid: $ppid}' ` +
-    `2>/dev/null | ` +
-    `curl -sS -m 2 -X POST -H 'Content-Type: application/json' ` +
-    `--data-binary @- http://${MARKER} >/dev/null 2>&1 || true`
-  )
+  // Normalize to forward slashes so the same MARKER matches on Windows too.
+  const p = sendNotifyPath.replace(/\\/g, '/')
+  return `node "${p}" ${kind}`
 }
 
 // Map of hook event name -> command; re-run this script to update both.
@@ -58,9 +46,15 @@ for (const eventName of Object.keys(HOOKS)) {
   const current = Array.isArray(settings.hooks[eventName]) ? settings.hooks[eventName] : []
   const before = current.length
   // strip any previous claude-bouncer entry so re-running is safe
+  // Match both the current marker and the legacy one ('127.0.0.1:17891/notify'
+  // used pre-0.2 when the hook piped through jq+curl) so re-running cleans up
+  // upgrades from old installs.
+  const isOurs = (cmd) => typeof cmd === 'string' && (
+    cmd.includes(MARKER) || cmd.includes('127.0.0.1:17891/notify')
+  )
   const cleaned = current.filter(group => {
     const cmds = Array.isArray(group?.hooks) ? group.hooks : []
-    return !cmds.some(h => typeof h?.command === 'string' && h.command.includes(MARKER))
+    return !cmds.some(h => isOurs(h?.command))
   })
   totalRemoved += before - cleaned.length
 
