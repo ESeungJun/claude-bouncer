@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+  <div class="header">
+    <div class="title">
+      <img src="assets/claudecode-color.png" class="logo" />
+      <span>Claude Bouncer</span>
+    </div>
+    <div class="actions">
+      <button id="clear" title="Clear history">Clear</button>
+      <button id="close" title="Close">✕</button>
+    </div>
+  </div>
+  <div id="list" class="list"></div>
+  <div class="footer">
+    <span class="dot"></span>
+    <span id="status">listening on 127.0.0.1:17891</span>
+  </div>
+  <script src="panel.js"></script>
+</body>
+</html>

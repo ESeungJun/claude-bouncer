@@ -1,0 +1,14 @@
+{
+  "name": "claude-bouncer",
+  "version": "0.1.0",
+  "description": "Bouncing desktop pet that notifies when any Claude Code session finishes responding.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "install-hook": "node scripts/install-hook.js",
+    "uninstall-hook": "node scripts/install-hook.js --uninstall"
+  },
+  "devDependencies": {
+    "electron": "^32.2.0"
+  }
+}

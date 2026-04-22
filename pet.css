@@ -1,0 +1,171 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+#stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#pet {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: 100px;
+  height: auto;
+  image-rendering: pixelated;
+  cursor: grab;
+  transform-origin: bottom center;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.25));
+}
+
+#pet:active {
+  cursor: grabbing;
+}
+
+#pet.bouncing {
+  animation: bounce 0.55s cubic-bezier(0.25, 0.8, 0.4, 1) 3;
+}
+
+/* Prompt: Claude is blocked waiting for user — more urgent */
+#pet.prompt.bouncing {
+  animation: bounce 0.48s cubic-bezier(0.25, 0.8, 0.4, 1) 6;
+  filter: drop-shadow(0 4px 8px rgba(220, 60, 40, 0.55));
+}
+
+@keyframes bounce {
+  0%   { transform: translateY(0)     scale(1,    1);    }
+  15%  { transform: translateY(0)     scale(1.15, 0.85); }
+  35%  { transform: translateY(-38px) scale(0.95, 1.08); }
+  60%  { transform: translateY(0)     scale(1.05, 0.95); }
+  80%  { transform: translateY(-12px) scale(0.98, 1.02); }
+  100% { transform: translateY(0)     scale(1,    1);    }
+}
+
+.bubble {
+  position: absolute;
+  right: 128px;
+  bottom: 36px;
+  max-width: 220px;
+  background: #ffffff;
+  color: #222;
+  border: 2px solid #d97757;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.22s ease, transform 0.22s ease, box-shadow 0.15s;
+  pointer-events: none;
+  cursor: pointer;
+}
+.bubble.visible { pointer-events: auto; }
+.bubble.visible:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+.bubble::after {
+  content: "";
+  position: absolute;
+  right: -9px;
+  bottom: 14px;
+  width: 0;
+  height: 0;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-left: 9px solid #d97757;
+}
+
+.bubble::before {
+  content: "";
+  position: absolute;
+  right: -6px;
+  bottom: 16px;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 7px solid #ffffff;
+  z-index: 1;
+}
+
+/* Prompt variant: Claude is blocked waiting */
+.bubble.prompt {
+  border-color: #e0493a;
+  animation: pulseBorder 1.4s ease-in-out infinite;
+}
+.bubble.prompt::after { border-left-color: #e0493a; }
+.bubble.prompt .label { color: #e0493a; }
+.bubble.prompt .name { color: #e0493a; }
+
+@keyframes pulseBorder {
+  0%, 100% { box-shadow: 0 4px 14px rgba(224, 73, 58, 0.25); }
+  50%      { box-shadow: 0 4px 22px rgba(224, 73, 58, 0.7); }
+}
+
+.bubble.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* tiny hint that the bubble is clickable */
+.bubble .hint {
+  color: #b0b0b0;
+  font-size: 9px;
+  margin-top: 6px;
+  letter-spacing: 0.04em;
+  text-align: right;
+}
+.bubble.prompt .hint { color: #e0493a; }
+
+.bubble .label {
+  color: #888;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.bubble .name {
+  font-weight: 700;
+  color: #d97757;
+  font-size: 14px;
+  word-break: break-all;
+}
+
+.bubble .message {
+  color: #333;
+  font-size: 11px;
+  margin-top: 4px;
+  line-height: 1.3;
+  word-break: break-word;
+}
+.bubble .message:empty { display: none; }
+
+.bubble .term {
+  color: #6b6b6b;
+  font-size: 10px;
+  margin-top: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+.bubble .term:empty { display: none; }
+
+.bubble .sub {
+  color: #999;
+  font-size: 10px;
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
