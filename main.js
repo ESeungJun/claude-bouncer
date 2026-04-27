@@ -1,11 +1,35 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, shell, dialog } = require('electron')
 const http = require('http')
 const path = require('path')
 const fs = require('fs')
 const { execFile } = require('child_process')
+const { installClaudeHook } = require('./scripts/install-hook')
 
 const PORT = 17891
 const HISTORY_MAX = 50
+
+// Resolve send-notify.js to a real, on-disk file. In a packaged build it sits
+// inside app.asar.unpacked (see asarUnpack in package.json); `node` can't
+// execute files from inside the asar archive, so we point Claude Code's hook
+// at the unpacked copy. In dev __dirname is the project root, so the
+// .replace() is a no-op.
+function resolveSendNotifyPath() {
+  return path
+    .join(__dirname, 'scripts', 'send-notify.js')
+    .replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`)
+}
+
+function syncHook({ uninstall = false } = {}) {
+  try {
+    return installClaudeHook({
+      sendNotifyPath: resolveSendNotifyPath(),
+      uninstall,
+    })
+  } catch (e) {
+    console.error('[claude-bouncer] hook sync failed:', e.message)
+    return null
+  }
+}
 
 let petWindow = null
 let panelWindow = null
@@ -61,6 +85,10 @@ function createPetWindow() {
     petWindow.setAlwaysOnTop(true, 'screen-saver')
   }
   petWindow.setBackgroundColor('#00000000')
+  // Most of the pet window is transparent empty space. Default to passing
+  // clicks through to whatever's underneath; the renderer toggles this off
+  // only while the cursor is over the pet image or the visible bubble.
+  petWindow.setIgnoreMouseEvents(true, { forward: true })
 }
 
 function createPanelWindow() {
@@ -242,6 +270,41 @@ function createTray() {
     },
     { type: 'separator' },
     {
+      label: 'Reinstall hook',
+      click: () => {
+        const r = syncHook()
+        dialog.showMessageBox({
+          type: r ? 'info' : 'error',
+          message: r
+            ? `Hook installed: ${r.installed.join(', ')}`
+            : 'Hook install failed — see console for details.',
+          detail: r ? r.settingsPath : undefined,
+        })
+      },
+    },
+    {
+      label: 'Uninstall hook',
+      click: async () => {
+        const { response } = await dialog.showMessageBox({
+          type: 'warning',
+          buttons: ['Cancel', 'Remove'],
+          defaultId: 0,
+          cancelId: 0,
+          message: 'Remove claude-bouncer from Claude Code hooks?',
+          detail: 'You can re-add it any time via Reinstall hook.',
+        })
+        if (response !== 1) return
+        const r = syncHook({ uninstall: true })
+        dialog.showMessageBox({
+          type: r ? 'info' : 'error',
+          message: r
+            ? `Removed ${r.removed} hook entr${r.removed === 1 ? 'y' : 'ies'}.`
+            : 'Hook uninstall failed — see console for details.',
+        })
+      },
+    },
+    { type: 'separator' },
+    {
       label: 'Quit',
       click: () => { app.isQuitting = true; app.quit() },
     },
@@ -256,6 +319,9 @@ app.whenReady().then(() => {
   if (process.platform === 'darwin' && app.dock) {
     app.dock.hide()
   }
+  // Re-register the hook on every launch so it tracks the current binary
+  // location — handles "user moved the .app" without manual intervention.
+  syncHook()
   loadHistory()
   createPetWindow()
   createPanelWindow()
@@ -380,6 +446,12 @@ ipcMain.handle('open-external', (_, url) => {
 })
 ipcMain.handle('toggle-panel', togglePanel)
 ipcMain.handle('close-panel', () => panelWindow?.hide())
+
+ipcMain.handle('set-ignore-mouse', (_, ignore) => {
+  if (!petWindow || petWindow.isDestroyed()) return
+  if (ignore) petWindow.setIgnoreMouseEvents(true, { forward: true })
+  else petWindow.setIgnoreMouseEvents(false)
+})
 
 let dragInterval = null
 let dragOffsetX = 0

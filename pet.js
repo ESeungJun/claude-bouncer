@@ -55,6 +55,34 @@ function formatTime(ts) {
   return `${hh}:${mm}:${ss}`
 }
 
+// --- click-through for the transparent empty area ---
+// Window-level ignoreMouseEvents is on by default so the empty pixels around
+// the pet pass clicks through to whatever's underneath. Flip it off only
+// while the cursor is actually over the pet image or the visible bubble.
+let petHovered = false
+let bubbleHovered = false
+let dragging = false
+function syncIgnoreMouse() {
+  // Keep clicks routed to us while dragging — if mouseleave fires on a fast
+  // drag and we flip ignore back on, mouseup never reaches the window and the
+  // drag gets stuck.
+  window.api.setIgnoreMouse(!(petHovered || bubbleHovered || dragging))
+}
+pet.addEventListener('mouseenter', () => { petHovered = true; syncIgnoreMouse() })
+pet.addEventListener('mouseleave', () => { petHovered = false; syncIgnoreMouse() })
+bubble.addEventListener('mouseenter', () => { bubbleHovered = true; syncIgnoreMouse() })
+bubble.addEventListener('mouseleave', () => { bubbleHovered = false; syncIgnoreMouse() })
+
+// If the bubble disappears while the cursor is still over it, the resulting
+// pointer-events:none can swallow the mouseleave — clear the flag manually
+// when the .visible class drops.
+new MutationObserver(() => {
+  if (!bubble.classList.contains('visible') && bubbleHovered) {
+    bubbleHovered = false
+    syncIgnoreMouse()
+  }
+}).observe(bubble, { attributes: true, attributeFilter: ['class'] })
+
 // --- drag ---
 // match the pattern used in poketmon_idle: main-process cursor polling
 pet.addEventListener('mousedown', (e) => {
@@ -65,11 +93,19 @@ pet.addEventListener('mousedown', (e) => {
   // offset from window origin to cursor at drag start:
   const offsetX = e.clientX
   const offsetY = e.clientY
+  dragging = true
+  syncIgnoreMouse()
   window.api.startDrag({ offsetX, offsetY })
   e.preventDefault()
 })
-document.addEventListener('mouseup', () => window.api.stopDrag())
-window.addEventListener('blur', () => window.api.stopDrag())
+function endDrag() {
+  if (!dragging) return
+  dragging = false
+  window.api.stopDrag()
+  syncIgnoreMouse()
+}
+document.addEventListener('mouseup', endDrag)
+window.addEventListener('blur', endDrag)
 
 // right-click pet to toggle panel
 pet.addEventListener('contextmenu', (e) => {

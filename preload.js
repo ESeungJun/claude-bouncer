@@ -19,4 +19,5 @@ contextBridge.exposeInMainWorld('api', {
   closePanel: () => ipcRenderer.invoke('close-panel'),
   startDrag: (o) => ipcRenderer.invoke('start-drag', o),
   stopDrag: () => ipcRenderer.invoke('stop-drag'),
+  setIgnoreMouse: (ignore) => ipcRenderer.invoke('set-ignore-mouse', ignore),
 })

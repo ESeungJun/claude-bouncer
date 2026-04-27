@@ -3,12 +3,66 @@
   "version": "0.1.0",
   "description": "Bouncing desktop pet that notifies when any Claude Code session finishes responding.",
   "main": "main.js",
+  "author": "ESeungjun",
+  "license": "MIT",
   "scripts": {
     "start": "electron .",
     "install-hook": "node scripts/install-hook.js",
-    "uninstall-hook": "node scripts/install-hook.js --uninstall"
+    "uninstall-hook": "node scripts/install-hook.js --uninstall",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win"
   },
   "devDependencies": {
-    "electron": "^32.2.0"
+    "electron": "^32.2.0",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.eseungjun.claude-bouncer",
+    "productName": "Claude Bouncer",
+    "files": [
+      "main.js",
+      "preload.js",
+      "pet.html",
+      "pet.js",
+      "pet.css",
+      "panel.html",
+      "panel.js",
+      "panel.css",
+      "scripts/**",
+      "assets/**",
+      "package.json",
+      "!**/*.bat",
+      "!**/*.command"
+    ],
+    "asarUnpack": [
+      "scripts/**"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png",
+      "extendInfo": {
+        "LSUIElement": true
+      }
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }
