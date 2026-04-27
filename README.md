@@ -67,6 +67,33 @@ cd claude-bouncer
 
 Finder에서 `start.command`를 **더블클릭**해도 됩니다. 처음 실행 시 `npm install` + 훅 설치가 자동으로 진행돼요.
 
+> **터미널 창 없이 쓰고 싶다면** 아래 [정식 앱으로 빌드](#정식-앱으로-빌드) 섹션을 참고하세요. `.app` 번들로 만들면 더블클릭만으로 트레이 아이콘만 뜨고 터미널은 안 떠요.
+
+### 정식 앱으로 빌드
+
+소스 모드(`./start.command`) 대신 `.app` / `.exe` 번들로 만들고 싶을 때:
+
+```bash
+# macOS — .app + DMG + zip 생성
+npm run dist:mac
+
+# Windows — NSIS 설치파일(.exe) 생성
+npm run dist:win
+
+# 빠른 테스트용 (압축/서명 생략, .app만)
+npm run pack
+```
+
+결과물은 `dist/` 폴더에 생깁니다.
+- macOS: `dist/Claude Bouncer-<version>.dmg` 또는 `dist/mac-arm64/Claude Bouncer.app`
+- Windows: `dist/Claude Bouncer Setup <version>.exe`
+
+`.app`을 `/Applications`로 옮기고 더블클릭하면 트레이 아이콘만 뜨고, 훅은 자동으로 `.app` 내부 경로로 갱신됩니다(앱을 다른 위치로 옮긴 뒤 다시 실행해도 자동 갱신). 첫 실행 시 macOS Gatekeeper 경고가 뜨면 우클릭 → 열기로 한 번만 허용하세요.
+
+훅 관리는 트레이 메뉴에서:
+- `Reinstall hook` — 훅 재등록 (앱을 옮긴 뒤에 유용)
+- `Uninstall hook` — Claude Code 설정에서 제거
+
 ### 설치 — Windows
 
 **1. Node.js 설치**
@@ -216,6 +243,33 @@ cd claude-bouncer
 ```
 
 You can also double-click `start.command` in Finder. First run installs dependencies and the hook automatically.
+
+> **Want no Terminal window?** See [Build a standalone app](#build-a-standalone-app) below — the `.app` bundle launches straight to a tray icon, no Terminal involved.
+
+### Build a standalone app
+
+Prefer a real `.app` / `.exe` over the source-mode launchers:
+
+```bash
+# macOS — .app + DMG + zip
+npm run dist:mac
+
+# Windows — NSIS installer (.exe)
+npm run dist:win
+
+# Fast unsigned pack for local testing (.app only)
+npm run pack
+```
+
+Output lands in `dist/`:
+- macOS: `dist/Claude Bouncer-<version>.dmg` or `dist/mac-arm64/Claude Bouncer.app`
+- Windows: `dist/Claude Bouncer Setup <version>.exe`
+
+Drop the `.app` into `/Applications` and double-click — only the tray icon appears, and the hook is rewritten to point at the bundle's internal path. Move the `.app` later? Just relaunch and the hook updates automatically. macOS may show a Gatekeeper warning on first launch — right-click → Open once and you're set.
+
+Manage the hook from the tray menu:
+- `Reinstall hook` — re-register (useful after moving the app)
+- `Uninstall hook` — remove from Claude Code settings
 
 ### Install — Windows
 
