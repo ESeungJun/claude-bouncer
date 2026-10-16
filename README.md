@@ -141,7 +141,7 @@ The settings row turns green ("연결됨") once the extension talks to the app. 
 
 **Two styles**
 
-- **🎨 Pixel character** (default) — a cute super-deformed chibi (about two heads tall, big eyes and blush) that keeps only your most recognizable traits — hairstyle and hair color, glasses, outfit color — and exaggerates them. Higgsfield draws six poses (idle, blink, two walk frames, happy jump, asleep); the app cuts the sheet, detects the art's native pixel size and animates with those frames.
+- **🎨 Pixel character** (default) — works with a photo of you, a pet or any character image. It becomes a cute chibi that stays recognizable: colors, silhouette, hairstyle (or ears, horns, tail), eyes, facial hair, accessories and clothing patterns are carried over, nothing is invented, and it never turns realistic. Higgsfield draws six poses (idle, blink, two walk frames, happy jump, asleep); the app cuts the sheet, detects the art's native pixel size and animates with those frames.
 - **🟧 Claudy body** — keeps the classic body and paints your hair, skin tone and clothes on it, so every engine-drawn expression still works. Optional glasses and blush.
 
 Each run makes two images (about 3 credits) from your Higgsfield account. Prefer an API key? Choose **API 키로 연결하기** and paste a Key ID + Secret from [console.higgsfield.ai](https://console.higgsfield.ai).
