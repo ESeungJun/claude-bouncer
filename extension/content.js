@@ -8,6 +8,9 @@ const SETTLE_MS = 1200 // streaming has to stay off this long before we call it 
 let streaming = false
 let offSince = 0
 let promptAtStart = ''
+// One id per answer: a new chat starts at /new and only gets its /chat/<id>
+// URL while Claude is answering, so "started" and "finished" must share it.
+let sessionKey = ''
 
 const clip = (s, n = 300) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, n)
 
@@ -45,13 +48,14 @@ function check() {
     streaming = true
     offSince = 0
     promptAtStart = lastText('[data-testid="user-message"]')
-    send('submit', { prompt: promptAtStart })
+    sessionKey = conversation().id || `new-${Date.now().toString(36)}`
+    send('submit', { prompt: promptAtStart, sessionKey })
   } else if (!now && streaming) {
     if (!offSince) offSince = Date.now()
     if (Date.now() - offSince >= SETTLE_MS) {
       streaming = false
       offSince = 0
-      send('stop', { prompt: promptAtStart, summary: lastText('[data-testid="assistant-message"]') })
+      send('stop', { prompt: promptAtStart, sessionKey, summary: lastText('[data-testid="assistant-message"]') })
     }
   } else if (now) {
     offSince = 0

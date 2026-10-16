@@ -24,7 +24,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   post('/notify', {
     kind: msg.kind,
     source: 'web',
-    session_id: 'web:' + (msg.conversationId || sender.tab.id),
+    session_id: 'web:' + (msg.sessionKey || msg.conversationId || sender.tab.id),
     title: msg.title,
     url: msg.url,
     prompt: msg.prompt,

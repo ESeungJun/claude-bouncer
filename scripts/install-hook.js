@@ -21,11 +21,16 @@ function buildHookCommand(sendNotifyPath, kind) {
   return `node "${p}" ${kind}`
 }
 
-function isOurs(cmd) {
+// Ours = a send-notify.js that lives inside a claude-bouncer checkout or the
+// packaged app (or the exact path we're installing now), or the legacy
+// curl/jq hook from pre-0.2. Someone else's scripts/send-notify.js is left alone.
+function isOurs(cmd, currentPath) {
   if (typeof cmd !== 'string') return false
-  // Current dispatcher OR the legacy curl/jq hook from pre-0.2.
-  return cmd.includes(SEND_NOTIFY_TAIL) ||
-    cmd.includes('127.0.0.1:17891/notify')
+  const norm = (x) => String(x).replace(/\\/g, '/').replace(/\/{2,}/g, '/')
+  const c = norm(cmd)
+  if (currentPath && c.includes(norm(currentPath))) return true
+  if (c.includes('127.0.0.1:17891/notify')) return true
+  return c.includes(SEND_NOTIFY_TAIL) && /claude[- ]?bouncer/i.test(c)
 }
 
 // Core entry point. Pass the absolute path to send-notify.js for installs;
@@ -55,12 +60,16 @@ function installClaudeHook({ sendNotifyPath, uninstall = false } = {}) {
   const eventNames = new Set([...Object.keys(settings.hooks), ...Object.keys(HOOKS)])
   for (const eventName of eventNames) {
     const current = Array.isArray(settings.hooks[eventName]) ? settings.hooks[eventName] : []
-    const before = current.length
-    const cleaned = current.filter(group => {
-      const cmds = Array.isArray(group?.hooks) ? group.hooks : []
-      return !cmds.some(h => isOurs(h?.command))
-    })
-    removed += before - cleaned.length
+    // drop only our command; keep the rest of a group the user may have added to
+    let cleaned = []
+    for (const group of current) {
+      const cmds = Array.isArray(group?.hooks) ? group.hooks : null
+      if (!cmds) { cleaned.push(group); continue }
+      const kept = cmds.filter(h => !isOurs(h?.command, sendNotifyPath))
+      removed += cmds.length - kept.length
+      if (kept.length === cmds.length) cleaned.push(group)
+      else if (kept.length) cleaned.push({ ...group, hooks: kept })
+    }
 
     if (HOOKS[eventName]) {
       cleaned.push({
@@ -92,7 +101,7 @@ function installClaudeHook({ sendNotifyPath, uninstall = false } = {}) {
   }
 }
 
-module.exports = { installClaudeHook }
+module.exports = { installClaudeHook, isOurs }
 
 // --- CLI ---
 if (require.main === module) {

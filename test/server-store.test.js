@@ -95,3 +95,57 @@ test('extension origin is allowed; focus commands flow through the long poll', a
     server.close()
   }
 })
+
+test('command queue: cancelled polls drop out, requeue wakes a live poll', async () => {
+  const { commandQueue } = require('../lib/server')
+  const q = commandQueue()
+  const dead = q.wait(1000)
+  dead.cancel()
+  assert.strictEqual(await dead, null)
+  assert.strictEqual(q.waiting, 0)
+  const live = q.wait(1000)
+  q.requeue({ type: 'focus', tabId: 1 })
+  assert.deepStrictEqual(await live, { type: 'focus', tabId: 1 })
+  q.push({ type: 'focus', tabId: 2 }) // nobody waiting → queued
+  assert.deepStrictEqual(await q.wait(10), { type: 'focus', tabId: 2 })
+})
+
+test('hook installer only touches its own entries', () => {
+  const { isOurs } = require('../scripts/install-hook')
+  assert.ok(isOurs('node "/Users/me/claude-bouncer/scripts/send-notify.js" stop'))
+  assert.ok(isOurs('node "/Applications/Claude Bouncer.app/Contents/Resources/app.asar.unpacked/scripts/send-notify.js" stop'))
+  assert.ok(isOurs('node "C:\\Users\\me\\AppData\\Local\\Programs\\Claude Bouncer\\resources\\app.asar.unpacked\\scripts\\send-notify.js" stop'))
+  assert.ok(isOurs('node "/x/renamed/scripts/send-notify.js" stop', '/x/renamed/scripts/send-notify.js'))
+  assert.ok(isOurs('curl -s 127.0.0.1:17891/notify'))
+  assert.ok(!isOurs('node ~/proj/scripts/send-notify.js slack'))
+  assert.ok(!isOurs('echo done'))
+})
+
+test('hook installer keeps the user\'s commands in a shared group', () => {
+  const os = require('os')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-hooks-'))
+  const home = os.homedir
+  os.homedir = () => dir
+  delete require.cache[require.resolve('../scripts/install-hook')]
+  const { installClaudeHook } = require('../scripts/install-hook')
+  try {
+    fs.mkdirSync(path.join(dir, '.claude'))
+    const ours = 'node "/old/claude-bouncer/scripts/send-notify.js" stop'
+    fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), JSON.stringify({ hooks: { Stop: [
+      { matcher: '', hooks: [{ type: 'command', command: ours }, { type: 'command', command: 'say done' }] },
+      { matcher: '', hooks: [{ type: 'command', command: 'node ~/proj/scripts/send-notify.js slack' }] },
+    ] } }))
+    const r = installClaudeHook({ sendNotifyPath: '/new/claude-bouncer/scripts/send-notify.js' })
+    assert.strictEqual(r.removed, 1)
+    const stop = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8')).hooks.Stop
+    const cmds = stop.flatMap(g => g.hooks.map(h => h.command))
+    assert.ok(cmds.includes('say done'), 'user command kept')
+    assert.ok(cmds.includes('node ~/proj/scripts/send-notify.js slack'), 'unrelated send-notify kept')
+    assert.ok(cmds.some(c => c.includes('/new/claude-bouncer/')), 'ours re-added')
+    assert.ok(!cmds.includes(ours), 'old ours removed')
+  } finally {
+    os.homedir = home
+    delete require.cache[require.resolve('../scripts/install-hook')]
+    fs.rmSync(dir, { recursive: true })
+  }
+})
