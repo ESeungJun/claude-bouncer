@@ -254,6 +254,21 @@
     settings = await api.setSetting('scale', Number(b.dataset.v))
     renderSettings()
   }))
+  // claude.ai extension
+  async function renderExt() {
+    const s = await api.extStatus()
+    const el = $('#ext-status')
+    el.textContent = s.connected ? `연결됨 · ${s.browser || '브라우저'}` : '브라우저 확장을 설치하면 웹 채팅도 알려줘요'
+    el.classList.toggle('ok', s.connected)
+  }
+  $('#ext-install').addEventListener('click', () => {
+    $('#ext-guide').classList.toggle('on')
+    if ($('#ext-guide').classList.contains('on')) api.openExtensionFolder()
+  })
+  document.querySelector('[data-tab=settings]').addEventListener('click', renderExt)
+  setInterval(renderExt, 15000)
+  renderExt()
+
   $('#test-done').addEventListener('click', () => api.testNotify('done'))
   $('#test-need').addEventListener('click', () => api.testNotify('permission'))
   $('#reinstall').addEventListener('click', async () => {
