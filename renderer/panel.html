@@ -134,6 +134,21 @@
       <label class="set"><span class="set-label">방해 금지 (조용히 배지로만)</span><input type="checkbox" data-set="dnd" /></label>
       <label class="set"><span class="set-label">로그인 시 자동 실행</span><input type="checkbox" data-set="launchAtLogin" /></label>
       <div class="set">
+        <div>
+          <div class="set-label">claude.ai 웹 연결</div>
+          <div class="set-sub" id="ext-status">브라우저 확장을 설치하면 웹 채팅도 알려줘요</div>
+        </div>
+        <div class="seg"><button id="ext-install">설치 방법</button></div>
+      </div>
+      <div class="ext-guide" id="ext-guide">
+        <ol>
+          <li>Chrome 주소창에 <b>chrome://extensions</b> 입력 (Edge는 edge://extensions)</li>
+          <li>오른쪽 위 <b>개발자 모드</b> 켜기</li>
+          <li><b>압축해제된 확장 프로그램을 로드합니다</b> → 방금 열린 <b>extension</b> 폴더 선택</li>
+          <li>claude.ai 탭을 새로고침하면 끝!</li>
+        </ol>
+      </div>
+      <div class="set">
         <div class="set-label">테스트 알림</div>
         <div class="seg">
           <button id="test-done">완료</button><button id="test-need">권한 요청</button>
