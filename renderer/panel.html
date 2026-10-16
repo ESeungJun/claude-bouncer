@@ -68,6 +68,12 @@
 
         <div id="mk-saved" class="mk-saved"></div>
 
+        <div id="mk-connect" class="mk-connect">
+          <button id="hf-login" class="mk-btn wide">🔗 Higgsfield 계정으로 연결</button>
+          <div class="mk-sub small">브라우저에서 로그인하면 내 Higgsfield 크레딧으로 만들어요 (MCP 연결)</div>
+          <button id="hf-use-key" class="link small">API 키로 연결하기</button>
+        </div>
+
         <div id="mk-key" class="mk-key">
           <input id="hf-id" placeholder="API Key ID" autocomplete="off" spellcheck="false" />
           <input id="hf-secret" type="password" placeholder="API Key Secret" autocomplete="off" />
@@ -94,8 +100,9 @@
         <div class="mk-foot">
           <span id="mk-keyinfo"></span>
           <button id="mk-key-edit" class="link">키 변경</button>
+          <button id="hf-logout" class="link">연결 해제</button>
         </div>
-        <p class="hint">사진은 Higgsfield 서버로 보내져 이 캐릭터를 만드는 데만 쓰이고, 비용은 내 Higgsfield API 잔액에서 차감돼요 (만들 때마다 이미지 2장).</p>
+        <p class="hint">사진은 Higgsfield 서버로 보내져 이 캐릭터를 만드는 데만 쓰이고, 비용은 내 Higgsfield 크레딧(API 키로 연결했다면 API 잔액)에서 차감돼요 (만들 때마다 이미지 2장).</p>
       </div>
       <p class="hint">펫을 쓰다듬기(위에서 마우스 좌우로 문지르기) · 클릭 · 드래그해서 던지기 · 더블클릭 메뉴 · 우클릭 메뉴 · <span id="hint-hotkey">⌥⇧C</span> 어디서든 부르기</p>
     </section>

@@ -10,7 +10,8 @@ const { SessionTracker } = require('./lib/sessions')
 const { JsonStore } = require('./lib/store')
 const { focusTerminal } = require('./lib/focus')
 const { startServer, PORT } = require('./lib/server')
-const { Higgsfield, MODELS, DEFAULT_MODEL } = require('./lib/higgsfield')
+const { Higgsfield, MODELS, DEFAULT_MODEL, PROMPT } = require('./lib/higgsfield')
+const { HiggsfieldMcp } = require('./lib/higgsfield-mcp')
 
 const IS_MAC = process.platform === 'darwin'
 
@@ -287,6 +288,20 @@ function testNotification(kind) {
 
 const credsPath = () => path.join(app.getPath('userData'), 'higgsfield.json')
 
+// Preferred: sign in with the Higgsfield account over MCP (uses account credits).
+let hfMcp = null
+let hfCredits = null
+function mcp() {
+  if (!hfMcp) {
+    hfMcp = new HiggsfieldMcp({
+      file: path.join(app.getPath('userData'), 'higgsfield-mcp.bin'),
+      safeStorage,
+      openUrl: (url) => shell.openExternal(url),
+    })
+  }
+  return hfMcp
+}
+
 function loadCreds() {
   try {
     const d = JSON.parse(fs.readFileSync(credsPath(), 'utf8'))
@@ -316,6 +331,8 @@ function broadcastSkin() {
 function skinState() {
   const c = loadCreds()
   return {
+    mcp: mcp().signedIn,
+    credits: hfCredits,
     hasKey: !!c,
     keyId: c ? c.keyId.slice(0, 6) + '…' : '',
     list: store.data.skins.list,
@@ -337,11 +354,17 @@ function preparePhoto(file) {
 }
 
 async function generateSkin(file) {
-  const creds = loadCreds()
-  if (!creds) throw new Error('Higgsfield API 키를 먼저 넣어 주세요')
-  const hf = new Higgsfield(creds)
   const photo = preparePhoto(file)
   const template = fs.readFileSync(path.join(__dirname, 'assets', 'skin-template.png'))
+  const onProgress = (stage) => send(panel, 'skin-progress', stage)
+  if (mcp().signedIn) {
+    const images = await mcp().makeCharacter({ photo, photoType: 'image/jpeg', template, prompt: PROMPT, variants: 2, onProgress })
+    mcp().balance().then(c => { hfCredits = c; send(panel, 'skins', skinState()) }).catch(() => {})
+    return images.map(b => 'data:image/png;base64,' + b.toString('base64'))
+  }
+  const creds = loadCreds()
+  if (!creds) throw new Error('먼저 Higgsfield 계정을 연결해 주세요')
+  const hf = new Higgsfield(creds)
   const images = await hf.makeCharacter({
     photo, photoType: 'image/jpeg', template,
     model: store.data.settings.skinModel,
@@ -558,6 +581,28 @@ function registerIpc() {
   // custom looks
   ipcMain.handle('panel:pin', (_, pinned) => { panelPinned = !!pinned })
   ipcMain.handle('skin:state', () => skinState())
+  ipcMain.handle('skin:mcp-login', async () => {
+    panelPinned = true
+    try {
+      hfCredits = await mcp().login()
+      return { ...skinState() }
+    } catch (e) {
+      return { ...skinState(), error: e.message }
+    } finally {
+      panel?.show()
+    }
+  })
+  ipcMain.handle('skin:mcp-logout', () => { mcp().logout(); hfCredits = null; return skinState() })
+  ipcMain.handle('skin:refresh', async () => {
+    if (mcp().signedIn) {
+      try { hfCredits = await mcp().balance() } catch (e) { return { ...skinState(), error: e.message } }
+    }
+    return skinState()
+  })
+  ipcMain.handle('skin:estimate', async () => {
+    if (!mcp().signedIn) return null
+    try { return await mcp().estimate(PROMPT, 2) } catch { return null }
+  })
   ipcMain.handle('skin:set-key', (_, keyId, secret) => {
     saveCreds(String(keyId || '').trim(), String(secret || '').trim())
     return skinState()

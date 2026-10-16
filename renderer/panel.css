@@ -141,6 +141,9 @@ input[type="checkbox"]:checked::after { left: 18px; background: #fff; }
 .chip span { font-size: 9px; color: #cbbcae; max-width: 48px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip .del { position: absolute; top: -7px; right: -7px; width: 15px; height: 15px; padding: 0; border: 1px solid #4a3d35; background: #2a231f; color: #a8988c; font-size: 10px; line-height: 12px; display: none; }
 .chip:hover .del { display: block; }
+.mk-connect { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.mk-sub.small, .link.small { font-size: 10px; margin: 0; }
+.mk-connect .link { align-self: flex-start; }
 .mk-key { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
 .mk-key input { font: inherit; font-size: 11px; padding: 6px; background: #1f1a17; border: 2px solid #4a3d35; color: #fff; outline: none; }
 .mk-key input:focus { border-color: var(--clay); }

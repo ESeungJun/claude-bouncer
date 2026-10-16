@@ -91,3 +91,50 @@ test('Higgsfield client: friendly errors', async () => {
   await assert.rejects(new Higgsfield({ keyId: 'a', secret: 'b', fetchImpl: nsfw, sleep: async () => {} }).wait({ request_id: 'x' }), /정책/)
   assert.throws(() => new Higgsfield({ keyId: '', secret: '' }), /API 키/)
 })
+
+test('Higgsfield MCP: upload → generate_image → jobs_wait → download', async () => {
+  const os = require('os')
+  const { HiggsfieldMcp } = require('../lib/higgsfield-mcp')
+  const calls = []
+  let waits = 0
+  const reply = (o) => ({ content: [{ type: 'text', text: JSON.stringify(o) }] })
+  const fakeClient = {
+    callTool: async ({ name, arguments: a }) => {
+      calls.push({ name, a })
+      if (name === 'balance') return { content: [{ type: 'text', text: 'Credits: 5' }], structuredContent: { credits: 5 } }
+      if (name === 'media_upload') return reply({ uploads: a.files.map((f, i) => ({ upload_url: 'https://up/' + i, media_id: 'm' + i })) })
+      if (name === 'media_confirm') return reply({ results: [] })
+      if (name === 'generate_image') return reply({ results: [{ id: 'j1' }, { id: 'j2' }] })
+      if (name === 'jobs_wait') return reply(++waits < 2
+        ? { all_terminal: false, poll_after_seconds: 0, jobs: [] }
+        : { all_terminal: true, jobs: [{ status: 'completed', result_url: 'https://cdn/1.png' }, { status: 'failed' }] })
+      throw new Error('unexpected ' + name)
+    },
+  }
+  const fetched = []
+  const hf = new HiggsfieldMcp({
+    file: path.join(os.tmpdir(), 'cb-mcp-test.bin'),
+    safeStorage: null,
+    openUrl: () => {},
+    fetchImpl: async (url, opts = {}) => { fetched.push({ url, opts }); return { ok: true, status: 200, arrayBuffer: async () => Buffer.from('IMG') } },
+  })
+  hf.client = fakeClient
+  const out = await hf.makeCharacter({ photo: Buffer.from('p'), photoType: 'image/jpeg', template: Buffer.from('t'), prompt: 'P', sleep: async () => {} })
+  assert.deepStrictEqual(out.map(b => b.toString()), ['IMG'])
+  assert.strictEqual(await hf.balance(), 5) // structuredContent wins over text
+  const gen = calls.find(c => c.name === 'generate_image').a.params
+  assert.deepStrictEqual(gen.medias, [{ value: 'm0', role: 'image_references' }, { value: 'm1', role: 'image_references' }])
+  assert.strictEqual(gen.use_unlim, false)
+  assert.strictEqual(gen.count, 2)
+  assert.deepStrictEqual(calls.find(c => c.name === 'media_confirm').a.media_ids, ['m0', 'm1'])
+  assert.deepStrictEqual(fetched.filter(f => f.opts.method === 'PUT').map(f => f.opts.headers['Content-Type']), ['image/png', 'image/jpeg'])
+})
+
+test('Higgsfield MCP: tool errors surface as messages', async () => {
+  const os = require('os')
+  const { HiggsfieldMcp } = require('../lib/higgsfield-mcp')
+  const hf = new HiggsfieldMcp({ file: path.join(os.tmpdir(), 'cb-mcp-test2.bin'), safeStorage: null, openUrl: () => {} })
+  hf.client = { callTool: async () => ({ isError: true, content: [{ type: 'text', text: 'Not enough credits' }] }) }
+  await assert.rejects(hf.balance(), /Not enough credits/)
+  assert.strictEqual(hf.signedIn, false)
+})
