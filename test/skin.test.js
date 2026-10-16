@@ -190,3 +190,14 @@ test('white parts inside a drawn character stay opaque (only outside white is ba
   assert.ok(row.every(Boolean), 'rice in the middle of the onigiri is filled')
   assert.strictEqual(g[0][0], null, 'corner stays transparent')
 })
+
+test('4x2 sheets carry a side-view walk cycle that the engine plays', () => {
+  const S = loadSprites()
+  const cat = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets', 'presets', 'cat.json'), 'utf8'))
+  for (const n of ['idle', 'blink', 'happy', 'sleep', 'walk1', 'walk2', 'walk3', 'walk4']) assert.ok(cat.frames[n], n)
+  assert.strictEqual(S.sheetFrame({ walkFrame: 3 }), 'walk3')
+  // skins without walk frames (old 3x2 sheets, the onigiri) fall back to idle
+  const oni = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets', 'presets', 'onigiri.json'), 'utf8'))
+  assert.ok(!oni.frames.walk1)
+  assert.ok(S.petCanvas({ walkFrame: 2 }, oni))
+})
