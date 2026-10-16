@@ -17,8 +17,8 @@ window.CB = window.CB || {}
   const isNeed = (n) => n.kind !== 'done'
   const ARM_MS = 700 // ignore clicks this soon after a popup appears (it may have landed under a click)
 
-  // Place a w×h popup next to the pet without covering the cursor.
-  // `prev` keeps the last side while it stays valid, so the popup doesn't jump around.
+  // Place a w×h popup next to the pet. The side is picked once, when the popup
+  // appears, to avoid covering the cursor (it might land under a click).
   function place(world, pet, w, h, prev) {
     const hd = pet.head()
     const c = world.cursor
@@ -31,7 +31,10 @@ window.CB = window.CB || {}
       right: { x: pet.x + pet.pw / 2 + gap, y: clamp(pet.y - pet.ph / 2 - h / 2, 4, world.h - h - 4) },
       below: { x: clamp(hd.x - w / 2, 4, world.w - w - 4), y: pet.y + gap },
     }
-    const order = [prev, 'above', c.x > pet.x ? 'left' : 'right', c.x > pet.x ? 'right' : 'left', 'below'].filter(Boolean)
+    // Once a side is chosen, stick to it (only following the pet) so the popup
+    // never runs away from a cursor that is heading toward it.
+    if (prev && fits(cand[prev])) return { side: prev, ...cand[prev] }
+    const order = ['above', c.x > pet.x ? 'left' : 'right', c.x > pet.x ? 'right' : 'left', 'below']
     for (const side of order) if (fits(cand[side]) && clear(cand[side])) return { side, ...cand[side] }
     for (const side of order) if (fits(cand[side])) return { side, ...cand[side] }
     return { side: 'above', x: clamp(cand.above.x, 4, world.w - w - 4), y: clamp(cand.above.y, 4, world.h - h - 4) }
