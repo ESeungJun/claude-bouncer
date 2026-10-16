@@ -1,0 +1,39 @@
+name: Release
+
+# Push a tag like v0.3.0 → macOS (.dmg/.zip, Apple Silicon + Intel) and
+# Windows (.exe installer) builds are attached to a *draft* GitHub release.
+# Nothing is public until you press "Publish release" on GitHub.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: --mac
+          - os: windows-latest
+            target: --win
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Test
+        if: runner.os == 'macOS'
+        run: npm test
+      - name: Build and attach to the draft release
+        run: npx electron-builder ${{ matrix.target }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # unsigned builds (no Apple / Windows code-signing certificate yet)
+          CSC_IDENTITY_AUTO_DISCOVERY: false
