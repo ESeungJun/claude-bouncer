@@ -1,36 +1,54 @@
 name: Release
 
-# Push a tag like v0.3.0 → macOS (.dmg/.zip, Apple Silicon + Intel) and
-# Windows (.exe installer) builds are attached to a *draft* GitHub release.
+# Release flow
+#   master  — day-to-day development (feature PRs)
+#   release — what ships. Open a PR master → release (with the version bumped
+#             in package.json); merging it runs this workflow:
+#             tests → draft GitHub release v<version> → macOS + Windows
+#             installers attached to it.
 # Nothing is public until you press "Publish release" on GitHub.
 on:
   push:
-    tags: ['v*']
+    branches: [release]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  check:
+  prepare:
     runs-on: macos-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
-      - name: Tag matches package.json version
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          if [ "${{ github.ref_name }}" != "v$VERSION" ]; then
-            echo "Tag ${{ github.ref_name }} does not match package.json version $VERSION"; exit 1
-          fi
+      - id: v
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npm test
+      - name: Create the draft release (refuse to overwrite a published one)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          if gh release view "v$VERSION" --json isDraft --jq .isDraft 2>/dev/null | grep -q false; then
+            echo "v$VERSION is already published — bump the version in package.json first."; exit 1
+          fi
+          gh release view "v$VERSION" >/dev/null 2>&1 || \
+            gh release create "v$VERSION" --draft --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes
 
-  # mac first, then Windows, so both attach to the same draft release
   mac:
-    needs: check
+    needs: prepare
     runs-on: macos-latest
     permissions:
       contents: write
@@ -49,7 +67,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
   windows:
-    needs: mac
+    needs: prepare
     runs-on: windows-latest
     permissions:
       contents: write
