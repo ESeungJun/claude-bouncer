@@ -306,6 +306,7 @@ window.CB = window.CB || {}
 
   // Engine pose → one of the six drawn frames.
   function sheetFrame(o) {
+    if (o.walkFrame) return 'walk' + o.walkFrame
     if (o.expr === 'sleep') return 'sleep'
     if (o.expr === 'blink') return 'blink'
     if ((o.armL === 'up' && o.armR === 'up') || o.expr === 'happy' || o.expr === 'love') return 'happy'
@@ -342,7 +343,8 @@ window.CB = window.CB || {}
   function petCanvas(o, skin = activeSkin) {
     if (skin && !skin._id) skin._id = 's' + (++skinSeq)
     if (isSheet(skin)) {
-      const frame = sheetFrame(o)
+      let frame = sheetFrame(o)
+      if (!skin.frames[frame]) frame = 'idle'
       const key = skin._id + ':' + frame
       let c = cache.get(key)
       if (!c) { c = toCanvas(skin.frames[frame] || skin.frames.idle); cache.set(key, c) }
