@@ -542,12 +542,23 @@ window.CB = window.CB || {}
         }
       }
       if (this.blinkT > 0 && (!p.expr || p.expr === 'normal')) p.expr = 'blink'
+      // drawn characters: waddle instead of swapping walk frames, and face the way we go
+      if (Sprites.isSheet(Sprites.getSkin())) {
+        const l = p.legs
+        const walking = l && l[0] !== l[1]
+        if (walking) {
+          p.tilt = (p.tilt || 0) + (l[0] === 2 ? 5 : -5)
+          delete p.legs
+        }
+        if (p.lx) this.facing = p.lx
+        p.flip = this.facing === -1
+      }
       return p
     }
 
     render() {
       const p = this.currentPose()
-      const { bob = 0, tilt = 0, breathe = false, ...spriteOpts } = p
+      const { bob = 0, tilt = 0, breathe = false, flip = false, ...spriteOpts } = p
       const key = JSON.stringify(spriteOpts)
       if (key !== this.lastPose) {
         Sprites.blit(this.canvas, Sprites.petCanvas(spriteOpts), this.scale)
@@ -560,7 +571,7 @@ window.CB = window.CB || {}
       let sy = 1 - this.squash
       if (breathe) { const b = Math.sin(this.t * 2.2) * 0.03; sx += b; sy -= b }
       this.body.style.transform =
-        `translateY(${-this.z - bob * this.scale}px) rotate(${tilt}deg) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`
+        `translateY(${-this.z - bob * this.scale}px) rotate(${tilt}deg) scale(${(flip ? -sx : sx).toFixed(3)}, ${sy.toFixed(3)})`
       const shadowScale = Math.max(0.4, 1 - this.z / 200)
       this.shadow.style.transform = `translateX(-50%) scale(${shadowScale.toFixed(2)})`
       this.shadow.style.opacity = (0.28 * shadowScale).toFixed(2)
