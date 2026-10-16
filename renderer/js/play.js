@@ -10,12 +10,7 @@ window.CB = window.CB || {}
   const { Sprites, Sound } = CB
   const { rand, clamp, pick } = CB.util
 
-  function el(tag, cls, text) {
-    const e = document.createElement(tag)
-    if (cls) e.className = cls
-    if (text !== undefined) e.textContent = text
-    return e
-  }
+  const el = CB.el
 
   class Play {
     constructor(world, pet) {
@@ -31,6 +26,7 @@ window.CB = window.CB || {}
 
     stop() {
       this.item?.el.remove()
+      this.item?.hint?.remove()
       this.item = null
       if (this.mode === 'holding') this.w.releaseCapture('holding')
       this.endBall(false)
@@ -63,7 +59,8 @@ window.CB = window.CB || {}
       it.hint.remove()
       it.el.classList.remove('held')
       it.x = clamp(this.w.cursor.x, 20, this.w.w - 20)
-      it.y = clamp(this.w.cursor.y + 30, 40, this.w.h - 10)
+      // keep the snack where the pet can actually stand (it can't go higher than its own height)
+      it.y = clamp(this.w.cursor.y + 30, this.pet.ph + 10, this.w.h - 10)
       it.z = 30
       it.vz = 0
       this.mode = 'food'
@@ -138,7 +135,7 @@ window.CB = window.CB || {}
       this.ball = {
         el: node, shadow, r: (7 * s) / 2,
         x: clamp(p.x + 60, 30, this.w.w - 30), y: p.y, z: 120, vx: 0, vy: 0, vz: 0,
-        lastUserKick: 0, kicks: 0,
+        lastUserKick: this.t(), kicks: 0, // timers count from when the ball appears
       }
       node.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return
