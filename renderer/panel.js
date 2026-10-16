@@ -261,10 +261,26 @@
     el.textContent = s.connected ? `연결됨 · ${s.browser || '브라우저'}` : '브라우저 확장을 설치하면 웹 채팅도 알려줘요'
     el.classList.toggle('ok', s.connected)
   }
-  $('#ext-install').addEventListener('click', () => {
-    $('#ext-guide').classList.toggle('on')
-    if ($('#ext-guide').classList.contains('on')) api.openExtensionFolder()
+  // The guide stays open (and keeps the panel open) while you switch to
+  // Finder / Chrome to follow it.
+  $('#ext-install').addEventListener('click', async () => {
+    const on = $('#ext-guide').classList.toggle('on')
+    api.pinPanel(on)
+    if (on) $('#ext-path').textContent = (await api.extStatus()).folder
   })
+  $('#ext-folder').addEventListener('click', () => api.openExtensionFolder())
+  $('#ext-copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText('chrome://extensions') } catch {}
+    $('#ext-copy').textContent = '복사됨 ✓'
+    setTimeout(() => { $('#ext-copy').textContent = '주소 복사' }, 1500)
+  })
+  // leaving the settings tab closes the guide and lets the panel auto-hide again
+  document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.tab !== 'settings' && $('#ext-guide').classList.contains('on')) {
+      $('#ext-guide').classList.remove('on')
+      api.pinPanel(false)
+    }
+  }))
   document.querySelector('[data-tab=settings]').addEventListener('click', renderExt)
   setInterval(renderExt, 15000)
   renderExt()
