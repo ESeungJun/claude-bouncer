@@ -65,6 +65,9 @@ function send() {
     wt_session: env.WT_SESSION || '',
     tmux: env.TMUX || '',
     tmux_pane: env.TMUX_PANE || '',
+    // Orca (stablyai) terminal tab + pane, so a card can switch to that exact tab
+    orca_pane: env.ORCA_AGENT_PANE || '',
+    orca_tab: env.ORCA_TAB_ID || '',
     // the tab's tty only matters for cards (stop / notification); the app keeps
     // the last one per session, so prompt submits stay fast
     tty: kind === 'stop' || kind === 'notification' ? controllingTty() : '',
