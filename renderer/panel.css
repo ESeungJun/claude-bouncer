@@ -150,13 +150,25 @@ input[type="checkbox"]:checked::after { left: 18px; background: #fff; }
 .mk-style { margin-top: 6px; }
 .mk-style button { flex: 1; font-size: 11px; padding: 5px 4px; }
 .mk-request { margin: 2px 0 10px; padding: 8px; border: 1px dashed #4a3d35; }
+.mk-request b { color: #fff; }
+.mk-btn.ghost { background: transparent; border-color: #5a4a40; color: #cbbcae; margin-top: 4px; }
+.mk-btn.ghost:hover:not(:disabled) { border-color: var(--clay); color: #fff; background: #3b2a22; }
+
+/* compose window */
+.compose { position: fixed; inset: 0; z-index: 50; display: none; align-items: center; justify-content: center; background: rgba(15, 12, 10, 0.72); padding: 14px; }
+.compose.on { display: flex; }
+.cp-box { width: 100%; display: flex; flex-direction: column; gap: 7px; padding: 12px; background: #2a231f; border: 2px solid var(--clay); box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.4); }
+.cp-head { display: flex; align-items: center; font-size: 13px; color: #fff; }
+.cp-head .icon { margin-left: auto; }
+.cp-row { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+.cp-label { width: 58px; flex: none; color: #a8988c; }
+.cp-to { color: #fff; }
+.cp-row input, .cp-box textarea { flex: 1; min-width: 0; font: inherit; font-size: 11px; padding: 6px; background: #1f1a17; border: 2px solid #4a3d35; color: #fff; outline: none; resize: none; }
+.cp-row input:focus, .cp-box textarea:focus { border-color: var(--clay); }
+.cp-attach { display: flex; align-items: center; gap: 8px; font-size: 10px; color: #cbbcae; }
+.cp-attach img { width: 40px; height: 40px; object-fit: cover; border: 2px solid #4a3d35; }
 .mk-req-head { font-size: 12px; color: #fff; margin-bottom: 3px; }
 .mk-request .link { margin-top: 4px; }
-.req-form { display: none; flex-direction: column; gap: 5px; margin-top: 6px; }
-.req-form.on { display: flex; }
-.req-form input[type="email"], .req-form textarea { font: inherit; font-size: 11px; padding: 6px; background: #1f1a17; border: 2px solid #4a3d35; color: #fff; outline: none; resize: none; }
-.req-form input[type="email"]:focus, .req-form textarea:focus { border-color: var(--clay); }
-.req-photo { font-size: 10px; color: #a8988c; }
 .req-status { font-size: 11px; color: #ffd84d; }
 .req-status:empty { display: none; }
 .req-status.err { color: #ff8a80; }

@@ -458,8 +458,9 @@ const REQUEST_TO = 'https://formsubmit.co/ajax/6951004@gmail.com'
 const REQUEST_FROM = 'https://github.com/ESeungJun/claude-bouncer'
 let lastRequestAt = 0
 
-async function sendRequest({ email, message, photo, consent }) {
+async function sendRequest({ email, subject, message, photo, consent }) {
   email = String(email || '').trim()
+  subject = String(subject || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 80) || '캐릭터 제작 요청'
   message = String(message || '').trim().slice(0, 1000)
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('답장 받을 이메일을 확인해 주세요')
   if (!photo) throw new Error('캐릭터로 만들 사진을 골라 주세요')
@@ -467,7 +468,7 @@ async function sendRequest({ email, message, photo, consent }) {
   if (Date.now() - lastRequestAt < 60000) throw new Error('잠시 후 다시 보내 주세요')
   const jpeg = preparePhoto(String(photo))
   const form = new FormData()
-  form.append('_subject', '[Claude Bouncer] 캐릭터 제작 요청')
+  form.append('_subject', `[Claude Bouncer] ${subject}`)
   form.append('_template', 'table')
   form.append('_captcha', 'false')
   form.append('_replyto', email)
