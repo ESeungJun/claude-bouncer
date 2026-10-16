@@ -70,9 +70,11 @@ window.CB = window.CB || {}
     // ---------- geometry ----------
 
     setScale(s) {
-      this.scale = s
-      this.pw = Sprites.PET_W * s
-      this.ph = Sprites.PET_H * s
+      this.baseScale = s
+      const d = Sprites.dims()
+      this.scale = Sprites.pixelScale(s)
+      this.pw = d.w * this.scale
+      this.ph = d.h * this.scale
       this.el.style.width = this.pw + 'px'
       this.el.style.height = this.ph + 'px'
       this.shadow.style.width = Math.round(this.pw * 0.7) + 'px'
@@ -89,7 +91,10 @@ window.CB = window.CB || {}
 
     // head (top-center) in window coords, for bubbles and emotes
     // rows of empty headroom above the visible pet (hair fills some with a skin)
-    headroom() { return Sprites.getSkin() ? 1 : Sprites.TOP }
+    headroom() {
+      const skin = Sprites.getSkin()
+      return Sprites.isSheet(skin) ? 0 : skin ? 1 : Sprites.TOP
+    }
 
     head() { return { x: this.x, y: this.y - this.z - this.ph + this.headroom() * this.scale } }
 

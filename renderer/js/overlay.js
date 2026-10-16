@@ -302,7 +302,7 @@
 
   api.onSkin((skin) => {
     CB.Sprites.setSkin(skin)
-    pet.lastPose = ''
+    pet.setScale(world.settings.scale)
     if (world.settings.dnd) return
     play.stop()
     pet.emote('star', 5)

@@ -353,12 +353,12 @@ function preparePhoto(file) {
   return img.toJPEG(90)
 }
 
-async function generateSkin(file) {
+async function generateSkin(file, style) {
   const photo = preparePhoto(file)
   const template = fs.readFileSync(path.join(__dirname, 'assets', 'skin-template.png'))
   const onProgress = (stage) => send(panel, 'skin-progress', stage)
   if (mcp().signedIn) {
-    const images = await mcp().makeCharacter({ photo, photoType: 'image/jpeg', template, prompt: PROMPT, variants: 2, onProgress })
+    const images = await mcp().makeCharacter({ photo, photoType: 'image/jpeg', template, style, variants: 2, onProgress })
     mcp().balance().then(c => { hfCredits = c; send(panel, 'skins', skinState()) }).catch(() => {})
     return images.map(b => 'data:image/png;base64,' + b.toString('base64'))
   }
@@ -366,7 +366,7 @@ async function generateSkin(file) {
   if (!creds) throw new Error('먼저 Higgsfield 계정을 연결해 주세요')
   const hf = new Higgsfield(creds)
   const images = await hf.makeCharacter({
-    photo, photoType: 'image/jpeg', template,
+    photo, photoType: 'image/jpeg', template, style,
     model: store.data.settings.skinModel,
     variants: 2,
     onProgress: (stage) => send(panel, 'skin-progress', stage),
@@ -623,11 +623,12 @@ function registerIpc() {
   ipcMain.handle('skin:preview-photo', (_, file) => {
     try { return 'data:image/jpeg;base64,' + preparePhoto(String(file)).toString('base64') } catch { return null }
   })
-  ipcMain.handle('skin:generate', async (_, file) => {
-    try { return { images: await generateSkin(String(file)) } } catch (e) { return { error: e.message } }
+  ipcMain.handle('skin:generate', async (_, file, style) => {
+    try { return { images: await generateSkin(String(file), style === 'claudy' ? 'claudy' : 'pixel') } } catch (e) { return { error: e.message } }
   })
   ipcMain.handle('skin:save', (_, skin, name) => {
-    if (!skin || !Array.isArray(skin.texture)) return skinState()
+    const valid = skin && (Array.isArray(skin.texture) || (skin.type === 'sheet' && skin.frames?.idle))
+    if (!valid) return skinState()
     const id = Date.now().toString(36)
     const list = store.data.skins.list
     list.unshift({ id, name: String(name || '내 클로디').slice(0, 20), createdAt: Date.now(), skin })

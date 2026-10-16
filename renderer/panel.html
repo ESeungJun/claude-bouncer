@@ -64,7 +64,7 @@
 
       <div class="maker">
         <div class="mk-head">✨ 나만의 클로디</div>
-        <div class="mk-sub">사진을 넣으면 Higgsfield가 나를 닮은 도트 클로디로 만들어줘요. 모든 표정·놀이가 그대로 동작해요.</div>
+        <div class="mk-sub">사진을 넣으면 Higgsfield가 나를 닮은 도트 캐릭터로 만들어줘요. 걷기·깜빡임·점프·잠자기 동작까지 같이 그려요.</div>
 
         <div id="mk-saved" class="mk-saved"></div>
 
@@ -87,7 +87,11 @@
           <img id="mk-photo" alt="" />
           <span id="mk-drop-text">📷 사진을 끌어다 놓거나 눌러서 고르기</span>
         </div>
-        <button id="mk-go" class="mk-btn wide" disabled>닮은 클로디 만들기</button>
+        <div class="seg mk-style" id="mk-style">
+          <button data-style="pixel" class="on">🎨 도트 캐릭터</button>
+          <button data-style="claudy">🟧 클로디 몸에 입히기</button>
+        </div>
+        <button id="mk-go" class="mk-btn wide" disabled>닮은 캐릭터 만들기</button>
         <div id="mk-progress" class="mk-progress"></div>
 
         <div id="mk-results" class="mk-results"></div>

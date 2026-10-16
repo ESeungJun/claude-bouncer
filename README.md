@@ -56,9 +56,14 @@
 
 <img src="docs/panel-custom-look.png" width="250" align="right" />
 
-패널 🐾 펫 탭에서 사진을 넣으면 [Higgsfield](https://higgsfield.ai)가 **나를 닮은 도트 클로디**로 바꿔줘요. 머리 모양·머리색, 피부색, 옷 색을 입힌 두 가지 버전 중에 고르고 안경·볼터치를 켜고 끌 수 있어요. 만든 모습은 저장해두고 언제든 기본 클로디와 바꿔 입을 수 있어요.
+패널 🐾 펫 탭에서 사진을 넣으면 [Higgsfield](https://higgsfield.ai)가 **나를 닮은 도트 캐릭터**로 바꿔줘요. 두 가지 스타일이 있어요.
 
-생성된 그림을 그대로 쓰지 않고 앱이 **스프라이트 격자(18×16)에 다시 맞춰 찍기 때문에**, 걷기·표정·게임 같은 모든 동작이 그대로 돼요.
+- **🎨 도트 캐릭터 (기본)** — 사진 속 사람을 닮은 자유로운 치비 도트 캐릭터. 같은 캐릭터의 6컷(가만히·깜빡·걷기 2컷·만세 점프·잠자기)을 한 장에 그리게 하고, 앱이 잘라서 원래 도트 크기를 찾아 프레임으로 써요. 걷기·깜빡임·점프·잠·이펙트가 그대로 동작해요.
+- **🟧 클로디 몸에 입히기** — 클로디 몸통 틀은 그대로 두고 머리·피부·옷 색만 입혀요. 시선 따라가기·하트 눈 같은 모든 표정이 동작하고 안경·볼터치를 켤 수 있어요.
+
+두 가지 버전 중에 고르고, 만든 모습은 저장해두고 언제든 기본 클로디와 바꿔 입을 수 있어요.
+
+<p align="center"><img src="docs/custom-look-pixel.png" width="560" alt="pixel character from a photo" /></p>
 
 1. 패널 → 🐾 펫 → **🔗 Higgsfield 계정으로 연결** → 브라우저에서 로그인·허용 (Claude Code의 Higgsfield 커넥터와 같은 MCP OAuth 연결이에요. 로그인 정보는 OS 키체인으로 암호화해서 저장)
 2. 사진을 끌어다 놓거나 골라서 **닮은 클로디 만들기** (30초~1분)
@@ -163,7 +168,7 @@ Clawd's little cousin lives on your desktop. Most of the time it wanders around,
 
 ### Make it look like you
 
-Drop a photo into the Pet tab and [Higgsfield](https://higgsfield.ai) repaints Claudy with your hair, skin tone and clothes. The app snaps the result back onto the sprite grid, so every pose, expression and game keeps working. Pick one of two variants, toggle glasses / blush, and switch looks any time. Connect with **your Higgsfield account** (MCP OAuth in the browser, the same connector Claude Code uses — tokens are encrypted with the OS keychain) and it spends your account credits (about 3 per run, two images). Alternatively paste an API key from [console.higgsfield.ai](https://console.higgsfield.ai). Each run uploads the photo to Higgsfield.
+Drop a photo into the Pet tab and [Higgsfield](https://higgsfield.ai) turns you into a pixel character. The default style draws a free-form chibi pixel character as a 3×2 sheet of six poses (idle, blink, two walk frames, happy jump, asleep); the app cuts the sheet, detects the art's native pixel size and uses the frames for walking, blinking, jumping and sleeping. The "Claudy body" style instead repaints the classic body with your hair, skin tone and clothes and keeps every engine-drawn expression. Pick one of two variants, toggle glasses / blush, and switch looks any time. Connect with **your Higgsfield account** (MCP OAuth in the browser, the same connector Claude Code uses — tokens are encrypted with the OS keychain) and it spends your account credits (about 3 per run, two images). Alternatively paste an API key from [console.higgsfield.ai](https://console.higgsfield.ai). Each run uploads the photo to Higgsfield.
 
 ### Install
 

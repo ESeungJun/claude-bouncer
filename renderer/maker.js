@@ -8,7 +8,7 @@
   const PREVIEW_POSES = [
     {}, { legs: [2, 1, 2, 1] }, { legs: [1, 2, 1, 2] }, {},
     { expr: 'happy', mouth: 'open', armL: 'up', armR: 'up', legs: [1, 1, 1, 1] },
-    { expr: 'blink' }, { expr: 'love', mouth: 'cat' }, { expr: 'happy', mouth: 'smile', armR: 'up' },
+    { expr: 'blink' }, { expr: 'love', mouth: 'cat' }, { legs: [2, 1, 2, 1] }, { legs: [1, 2, 1, 2] }, { expr: 'sleep', dy: 2 },
   ]
 
   let state = await api.skinState()
@@ -18,6 +18,12 @@
   let chosen = -1
   let frame = 0
   let showKeyForm = false
+  let style = 'pixel'
+  document.querySelectorAll('#mk-style button').forEach(b => b.addEventListener('click', () => {
+    style = b.dataset.style
+    document.querySelectorAll('#mk-style button').forEach(x => x.classList.toggle('on', x === b))
+    render()
+  }))
   let cost = null
   const connected = () => state.mcp || state.hasKey
 
@@ -33,7 +39,7 @@
   function chip(id, name, skin) {
     const c = el('div', 'chip' + ((state.active || '') === id ? ' on' : ''))
     const cv = el('canvas', 'px')
-    Sprites.blit(cv, Sprites.petCanvas({ expr: 'happy', mouth: 'smile' }, skin), 2)
+    Sprites.blit(cv, Sprites.petCanvas({ expr: 'happy', mouth: 'smile' }, skin), Sprites.isSheet(skin) ? 1 : 2)
     c.append(cv, el('span', '', name))
     c.title = name
     c.addEventListener('click', async () => { state = await api.useSkin(id); render() })
@@ -61,7 +67,8 @@
     $('#mk-key-edit').style.display = state.hasKey && !state.mcp ? '' : 'none'
     $('#hf-logout').style.display = state.mcp ? '' : 'none'
     $('#mk-go').disabled = !connected() || !photoPath || busy
-    $('#mk-go').textContent = cost ? `닮은 클로디 만들기 (약 ${cost} 크레딧)` : '닮은 클로디 만들기'
+    const what = style === 'claudy' ? '클로디' : '캐릭터'
+    $('#mk-go').textContent = cost ? `닮은 ${what} 만들기 (약 ${cost} 크레딧)` : `닮은 ${what} 만들기`
   }
 
   // ---------- API key ----------
@@ -166,11 +173,15 @@
     pin()
     render()
     progress(STAGES.upload)
-    const r = await api.generateSkin(photoPath)
+    const r = await api.generateSkin(photoPath, style)
+    const madeAs = style
     busy = false
     if (r.error) { progress(r.error, true); render(); pin(); return }
     for (const src of r.images) {
-      try { variants.push({ skin: Pixelize.pixelize(await decode(src)), src }) } catch (e) { variants.push({ error: e.message, src }) }
+      try {
+        const img = await decode(src)
+        variants.push({ skin: madeAs === 'claudy' ? Pixelize.pixelize(img) : Pixelize.pixelizeSheet(img), src })
+      } catch (e) { variants.push({ error: e.message, src }) }
     }
     chosen = variants.findIndex(v => v.skin)
     progress(chosen < 0 ? '도트로 바꾸지 못했어요. 다른 사진(정면, 밝은 곳)으로 다시 해 볼까요?' : '마음에 드는 쪽을 골라주세요', chosen < 0)
@@ -182,6 +193,7 @@
   function currentSkin() {
     const v = variants[chosen]
     if (!v?.skin) return null
+    if (Sprites.isSheet(v.skin)) return { ...v.skin, _id: undefined }
     return { ...v.skin, glasses: $('#mk-glasses').checked, blush: $('#mk-blush').checked, _id: undefined }
   }
 
@@ -202,6 +214,10 @@
       return card
     }))
     $('#mk-opts').classList.toggle('on', chosen >= 0)
+    // glasses / blush only apply to the Claudy-body style
+    const sheet = Sprites.isSheet(variants[chosen]?.skin)
+    $('#mk-glasses').closest('label').style.display = sheet ? 'none' : ''
+    $('#mk-blush').closest('label').style.display = sheet ? 'none' : ''
     drawPreviews()
   }
 
@@ -209,6 +225,7 @@
   const previewSkins = new Map()
   function previewSkin(i) {
     const v = variants[i]
+    if (Sprites.isSheet(v.skin)) return v.skin
     const key = `${i}:${$('#mk-glasses').checked}:${$('#mk-blush').checked}`
     if (!previewSkins.has(key)) previewSkins.set(key, { ...v.skin, glasses: $('#mk-glasses').checked, blush: $('#mk-blush').checked })
     return previewSkins.get(key)
@@ -217,7 +234,8 @@
   function drawPreviews() {
     document.querySelectorAll('.variant canvas').forEach((cv) => {
       const i = Number(cv.dataset.i)
-      Sprites.blit(cv, Sprites.petCanvas(PREVIEW_POSES[frame % PREVIEW_POSES.length], previewSkin(i)), 6)
+      const sk = previewSkin(i)
+      Sprites.blit(cv, Sprites.petCanvas(PREVIEW_POSES[frame % PREVIEW_POSES.length], sk), Sprites.isSheet(sk) ? 2 : 6)
     })
   }
   setInterval(() => { frame++; if (variants.length) drawPreviews() }, 380)

@@ -59,7 +59,7 @@ contextBridge.exposeInMainWorld('api', {
   pickPhoto: () => ipcRenderer.invoke('skin:pick-photo'),
   previewPhoto: (file) => ipcRenderer.invoke('skin:preview-photo', file),
   pathForFile: (file) => { try { return webUtils.getPathForFile(file) } catch { return '' } },
-  generateSkin: (file) => ipcRenderer.invoke('skin:generate', file),
+  generateSkin: (file, style) => ipcRenderer.invoke('skin:generate', file, style),
   saveSkin: (skin, name) => ipcRenderer.invoke('skin:save', skin, name),
   useSkin: (id) => ipcRenderer.invoke('skin:use', id),
   deleteSkin: (id) => ipcRenderer.invoke('skin:delete', id),

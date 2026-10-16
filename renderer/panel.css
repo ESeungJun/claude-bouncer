@@ -137,10 +137,12 @@ input[type="checkbox"]:checked::after { left: 18px; background: #fff; }
 .mk-saved { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .chip { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px; border: 2px solid #4a3d35; background: #1f1a17; cursor: pointer; }
 .chip.on { border-color: var(--clay); }
-.chip canvas { width: 36px; height: 32px; }
+.chip canvas { height: 32px; width: auto; }
 .chip span { font-size: 9px; color: #cbbcae; max-width: 48px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip .del { position: absolute; top: -7px; right: -7px; width: 15px; height: 15px; padding: 0; border: 1px solid #4a3d35; background: #2a231f; color: #a8988c; font-size: 10px; line-height: 12px; display: none; }
 .chip:hover .del { display: block; }
+.mk-style { margin-top: 6px; }
+.mk-style button { flex: 1; font-size: 11px; padding: 5px 4px; }
 .mk-connect { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .mk-sub.small, .link.small { font-size: 10px; margin: 0; }
 .mk-connect .link { align-self: flex-start; }
@@ -163,7 +165,7 @@ input[type="checkbox"]:checked::after { left: 18px; background: #fff; }
 .mk-results:empty { display: none; }
 .variant { flex: 1; padding: 6px; border: 2px solid #4a3d35; background: #f3efe9; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .variant.on { border-color: var(--clay); box-shadow: 0 0 0 2px var(--clay); }
-.variant canvas { width: 108px; height: 96px; }
+.variant canvas { height: 96px; width: auto; max-width: 100%; }
 .variant .src { width: 44px; height: 44px; image-rendering: auto; border: 1px solid #d9cbb8; }
 .variant .bad { color: #b24; font-size: 10px; }
 .mk-opts { display: none; align-items: center; gap: 10px; margin-top: 8px; font-size: 11px; color: #cbbcae; }
