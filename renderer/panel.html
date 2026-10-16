@@ -70,16 +70,7 @@
 
         <div id="mk-request" class="mk-request">
           <div class="mk-req-head">🙋 힉스필드 계정이 없다면</div>
-          <div class="mk-sub small">위의 기본 캐릭터(고양이 · 강아지 · 주먹밥)를 쓰거나, 사진을 보내주시면 개발자가 만들어서 메일로 보내드려요.</div>
-          <button id="req-open" class="link small">제작 요청 보내기 →</button>
-          <div id="req-form" class="req-form">
-            <input id="req-email" type="email" placeholder="답장 받을 이메일" autocomplete="email" />
-            <textarea id="req-message" rows="2" maxlength="1000" placeholder="원하는 느낌을 적어주세요 (예: 안경 꼭 넣어주세요!)"></textarea>
-            <div class="req-photo"><span id="req-photo-name">아래 📷 칸에서 고른 사진이 함께 가요</span></div>
-            <label class="req-consent"><input type="checkbox" id="req-consent" /> 캐릭터 제작을 위해 사진 · 이메일 · 메시지를 개발자에게 보내는 데 동의해요. 메일 전달 서비스 FormSubmit을 거쳐 개발자 메일함으로 가고, 캐릭터 제작에만 써요.</label>
-            <button id="req-send" class="mk-btn wide">요청 보내기</button>
-            <div id="req-status" class="req-status"></div>
-          </div>
+          <div class="mk-sub small">위의 기본 캐릭터(고양이 · 강아지 · 주먹밥)를 쓰거나, 아래에서 사진을 고른 뒤 <b>✉️ 직접 요청하기</b>로 개발자에게 부탁하세요.</div>
         </div>
 
         <div id="mk-connect" class="mk-connect">
@@ -106,6 +97,7 @@
           <button data-style="claudy">🟧 클로디 몸에 입히기</button>
         </div>
         <button id="mk-go" class="mk-btn wide" disabled>닮은 캐릭터 만들기</button>
+        <button id="mk-ask" class="mk-btn wide ghost" disabled>✉️ 직접 요청하기 (개발자에게 사진 보내기)</button>
         <div id="mk-progress" class="mk-progress"></div>
 
         <div id="mk-results" class="mk-results"></div>
@@ -175,6 +167,21 @@
       </div>
     </section>
   </main>
+
+  <!-- "make one for me" compose window -->
+  <div id="compose" class="compose" role="dialog" aria-label="캐릭터 제작 요청">
+    <div class="cp-box">
+      <div class="cp-head"><b>✉️ 캐릭터 제작 요청</b><button id="cp-close" class="icon" title="닫기">×</button></div>
+      <div class="cp-row"><span class="cp-label">받는 사람</span><span class="cp-to">클로디 개발자</span></div>
+      <label class="cp-row"><span class="cp-label">내 이메일</span><input id="req-email" type="email" placeholder="답장 받을 주소" autocomplete="email" /></label>
+      <label class="cp-row"><span class="cp-label">제목</span><input id="req-subject" type="text" maxlength="80" value="캐릭터 제작 요청" /></label>
+      <textarea id="req-message" rows="5" maxlength="1000" placeholder="어떤 캐릭터로 만들고 싶은지 적어주세요.&#10;예) 안경이랑 고양이 귀 머리띠 꼭 넣어주세요!"></textarea>
+      <div class="cp-attach"><img id="cp-photo" alt="" /><span id="req-photo-name"></span></div>
+      <label class="req-consent"><input type="checkbox" id="req-consent" /> 캐릭터 제작을 위해 사진 · 이메일 · 내용을 개발자에게 보내는 데 동의해요. 메일 전달 서비스 FormSubmit을 거쳐 개발자 메일함으로 가고, 캐릭터 제작에만 써요.</label>
+      <div id="req-status" class="req-status"></div>
+      <button id="req-send" class="mk-btn wide">보내기</button>
+    </div>
+  </div>
 
   <script src="js/sprites.js"></script>
   <script src="js/pixelize.js"></script>
