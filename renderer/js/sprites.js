@@ -309,9 +309,9 @@ window.CB = window.CB || {}
     if (o.expr === 'sleep') return 'sleep'
     if (o.expr === 'blink') return 'blink'
     if ((o.armL === 'up' && o.armR === 'up') || o.expr === 'happy' || o.expr === 'love') return 'happy'
-    const l = o.legs
-    if (l && l[0] === 2 && l[1] === 1) return 'walkA'
-    if (l && l[0] === 1 && l[1] === 2) return 'walkB'
+    // Walking uses the idle frame with a waddle (see pet.js): generated walk
+    // frames often turn the body or move the tail, which flickers when
+    // alternated quickly.
     return 'idle'
   }
 

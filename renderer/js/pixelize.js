@@ -267,18 +267,24 @@
       const row = []
       for (let x = 0; x < cols; x++) {
         const got = []
-        let bgCount = 0
+        const bgLike = []
+        let outside = 0
         const N = 7
         for (let i = 0; i < N; i++) {
           for (let j = 0; j < N; j++) {
             const X = Math.floor(ox + (x + (j + 0.5) / N) * cell), Y = Math.floor(oy + (y + (i + 0.5) / N) * cell)
-            if (X < 0 || Y < 0 || X >= img.width || Y >= img.height) { bgCount++; continue }
+            if (X < 0 || Y < 0 || X >= img.width || Y >= img.height) { outside++; continue }
             const c = px(img, X, Y)
-            if (isBg(c, bg)) bgCount++
+            if (isBg(c, bg)) bgLike.push(c)
             else got.push(c)
           }
         }
-        if (got.length < bgCount * 0.8) { row.push(null); continue }
+        if (got.length < (bgLike.length + outside) * 0.8) {
+          // looks like background — but it may be a white part of the character
+          // (rice, a white chest); decided below by whether it touches the outside
+          row.push(bgLike.length ? { maybe: median(bgLike) } : null)
+          continue
+        }
         // dark detail (eyes, outline) wins when it covers a good part of the cell,
         // otherwise take the most common color
         const dark = got.filter(c => lum(c) < 70)
@@ -286,7 +292,29 @@
       }
       g.push(row)
     }
-    return g
+    return keepEnclosedWhite(g)
+  }
+
+  // Background-coloured cells connected to the frame's edge are background;
+  // the ones enclosed by the character (inside its outline) are part of it.
+  function keepEnclosedWhite(g) {
+    const h = g.length, w = g[0].length
+    const isMaybe = (c) => c === null || (c && c.maybe)
+    const outside = g.map(row => row.map(() => false))
+    const stack = []
+    for (let x = 0; x < w; x++) stack.push([x, 0], [x, h - 1])
+    for (let y = 0; y < h; y++) stack.push([0, y], [w - 1, y])
+    while (stack.length) {
+      const [x, y] = stack.pop()
+      if (x < 0 || y < 0 || x >= w || y >= h || outside[y][x] || !isMaybe(g[y][x])) continue
+      outside[y][x] = true
+      stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1])
+    }
+    return g.map((row, y) => row.map((c, x) => {
+      if (!isMaybe(c)) return c
+      if (outside[y][x] || c === null) return null
+      return c.maybe
+    }))
   }
 
   // The generated art is drawn on its own pixel grid (each "pixel" is a few
