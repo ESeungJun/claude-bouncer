@@ -283,6 +283,8 @@ window.CB = window.CB || {}
     }
 
     sleep(dur = 120) {
+      // already asleep (e.g. still away from the keyboard): just keep sleeping, quietly
+      if (this.act?.name === 'sleep') { this.act.dur = Math.max(this.act.dur, this.act.t + dur); return this.act }
       Sound.play('pop')
       return this.setAct({
         name: 'sleep', dur, zT: 0,

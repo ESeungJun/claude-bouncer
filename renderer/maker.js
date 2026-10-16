@@ -24,16 +24,12 @@
     style = b.dataset.style
     document.querySelectorAll('#mk-style button').forEach(x => x.classList.toggle('on', x === b))
     render()
+    loadCost()
   }))
   let cost = null
   const connected = () => state.mcp || state.hasKey
 
-  function el(tag, cls, text) {
-    const e = document.createElement(tag)
-    if (cls) e.className = cls
-    if (text !== undefined) e.textContent = text
-    return e
-  }
+  const el = CB.el
 
   // ---------- saved looks ----------
 
@@ -117,7 +113,7 @@
 
   async function loadCost() {
     if (!state.mcp) return
-    cost = await api.estimateSkin()
+    cost = await api.estimateSkin(style)
     render()
   }
   $('#hf-console').addEventListener('click', () => api.openExternal('https://console.higgsfield.ai'))
@@ -318,12 +314,12 @@
     syncReqPhoto()
     reqStatus('')
     $('#compose').classList.add('on')
-    api.pinPanel(true)
+    api.pinPanel(true, 'compose')
     setTimeout(() => $('#req-email').focus(), 50)
   }
   function closeCompose() {
     $('#compose').classList.remove('on')
-    pin()
+    api.pinPanel(false, 'compose')
   }
   $('#mk-ask').addEventListener('click', openCompose)
   $('#cp-close').addEventListener('click', closeCompose)
