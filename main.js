@@ -584,7 +584,7 @@ function buildTrayMenu() {
       ],
     },
     { type: 'separator' },
-    { label: '종료', click: () => { app.isQuitting = true; app.quit() } },
+    { label: '클로디 종료', click: () => { app.isQuitting = true; app.quit() } },
   ])
   tray.setContextMenu(menu)
 }
@@ -787,6 +787,8 @@ function registerIpc() {
       { label: '펫 상태', click: () => showPanel('pet') },
       { label: '방해 금지', type: 'checkbox', checked: s.dnd, click: (i) => setSetting('dnd', i.checked) },
       { label: '돌아다니기', type: 'checkbox', checked: s.roam, click: (i) => setSetting('roam', i.checked) },
+      { type: 'separator' },
+      { label: '클로디 종료', click: () => { app.isQuitting = true; app.quit() } },
     ]).popup()
   })
 }
