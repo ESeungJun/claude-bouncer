@@ -8,7 +8,7 @@
 const http = require('http')
 const { execFileSync } = require('child_process')
 
-const PORT = 17891
+const PORT = Number(process.env.CLAUDE_BOUNCER_PORT) || 17891
 const HOST = '127.0.0.1'
 const TIMEOUT_MS = 1500
 const KINDS = ['stop', 'notification', 'submit', 'end']

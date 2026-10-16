@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Claude Bouncer for claude.ai",
+  "version": "0.1.0",
+  "description": "Lets the Claude Bouncer desktop pet know when Claude finishes answering on claude.ai.",
+  "icons": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" },
+  "host_permissions": ["http://127.0.0.1:17891/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    { "matches": ["https://claude.ai/*"], "js": ["content.js"], "run_at": "document_idle" }
+  ]
+}

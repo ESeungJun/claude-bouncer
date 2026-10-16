@@ -154,3 +154,21 @@ test('readGitBranch walks up and handles worktree .git files', () => {
   assert.strictEqual(readGitBranch(wt), 'wt-branch')
   fs.rmSync(dir, { recursive: true }); fs.rmSync(wt, { recursive: true })
 })
+
+test('claude.ai chats become sessions named by their title', () => {
+  const t = tracker()
+  const web = { source: 'web', session_id: 'web:abc', title: '여행 일정 짜기', url: 'https://claude.ai/chat/abc', browser: 'Google Chrome', tab_id: 12, window_id: 3 }
+  t.handle({ ...web, kind: 'submit', prompt: '도쿄 3박 4일 일정 짜줘' })
+  assert.strictEqual(t.workingCount(), 1)
+  const { notification } = t.handle({ ...web, kind: 'stop', prompt: '도쿄 3박 4일 일정 짜줘', last_assistant_message: '일정을 정리했어요' })
+  assert.strictEqual(notification.projectName, '여행 일정 짜기')
+  assert.strictEqual(notification.prompt, '도쿄 3박 4일 일정 짜줘')
+  assert.strictEqual(notification.terminal.web, true)
+  assert.strictEqual(notification.terminal.tabId, 12)
+  assert.strictEqual(notification.terminal.label, 'claude.ai · Google Chrome')
+  // finished while you were looking at the tab → no card
+  t.handle({ ...web, kind: 'submit', prompt: 'again' })
+  assert.strictEqual(t.handle({ ...web, kind: 'stop', visible: true }).notification, null)
+  // only claude.ai URLs are kept
+  assert.strictEqual(buildTerminal({ source: 'web', url: 'file:///etc/passwd' }).url, '')
+})
