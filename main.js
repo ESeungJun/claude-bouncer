@@ -1,14 +1,16 @@
 const {
   app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, shell, dialog,
-  Notification, powerMonitor, globalShortcut,
+  Notification, powerMonitor, globalShortcut, safeStorage,
 } = require('electron')
 const path = require('path')
 const os = require('os')
+const fs = require('fs')
 const { installClaudeHook } = require('./scripts/install-hook')
 const { SessionTracker } = require('./lib/sessions')
 const { JsonStore } = require('./lib/store')
 const { focusTerminal } = require('./lib/focus')
 const { startServer, PORT } = require('./lib/server')
+const { Higgsfield, MODELS, DEFAULT_MODEL } = require('./lib/higgsfield')
 
 const IS_MAC = process.platform === 'darwin'
 
@@ -28,12 +30,13 @@ const SETTING_RULES = {
   roam: v => typeof v === 'boolean',
   launchAtLogin: v => typeof v === 'boolean',
   hotkey: v => typeof v === 'string' && v.length < 60,
+  skinModel: v => Object.prototype.hasOwnProperty.call(MODELS, v),
 }
 
 const DEFAULT_HOTKEY = 'Alt+Shift+C'
 
 const DEFAULTS = {
-  settings: { scale: 3, sound: true, systemNotify: false, dnd: false, roam: true, launchAtLogin: false, hotkey: DEFAULT_HOTKEY },
+  settings: { scale: 3, sound: true, systemNotify: false, dnd: false, roam: true, launchAtLogin: false, hotkey: DEFAULT_HOTKEY, skinModel: DEFAULT_MODEL },
   pet: {
     name: '클로디',
     hunger: 80, fun: 70, energy: 90,
@@ -42,7 +45,10 @@ const DEFAULTS = {
     fed: 0, played: 0, petted: 0,
     bornAt: 0, lastSeen: 0,
   },
+  // looks made from photos; active = '' means the classic orange Claude
+  skins: { list: [], active: '' },
 }
+const SKINS_MAX = 8
 
 let store, historyStore, tracker
 let overlay = null
@@ -50,6 +56,7 @@ let panel = null
 let tray = null
 let currentDisplayId = null
 let hotkeyOk = false
+let panelPinned = false
 
 // Resolve send-notify.js to a real, on-disk file. In a packaged build it sits
 // inside app.asar.unpacked (see asarUnpack in package.json); `node` can't
@@ -165,7 +172,7 @@ function createPanel() {
   })
   panel.loadFile(path.join('renderer', 'panel.html'))
   panel.on('close', (e) => { if (!app.isQuitting) { e.preventDefault(); panel.hide() } })
-  panel.on('blur', () => { if (!panel.webContents.isDevToolsOpened()) panel.hide() })
+  panel.on('blur', () => { if (!panelPinned && !panel.webContents.isDevToolsOpened()) panel.hide() })
 }
 
 function showPanel(tab) {
@@ -274,6 +281,74 @@ function testNotification(kind) {
     onHookEvent({ ...base, kind: 'submit', prompt: '테스트 돌리고 실패하면 고쳐줘' })
     onHookEvent({ ...base, kind: 'notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to use Bash' })
   }
+}
+
+// ---------- custom looks (photo → pixel skin via Higgsfield) ----------
+
+const credsPath = () => path.join(app.getPath('userData'), 'higgsfield.json')
+
+function loadCreds() {
+  try {
+    const d = JSON.parse(fs.readFileSync(credsPath(), 'utf8'))
+    const secret = d.enc ? safeStorage.decryptString(Buffer.from(d.secret, 'base64')) : d.secret
+    return d.keyId && secret ? { keyId: d.keyId, secret } : null
+  } catch { return null }
+}
+
+function saveCreds(keyId, secret) {
+  if (!keyId || !secret) { try { fs.unlinkSync(credsPath()) } catch {} return false }
+  const enc = safeStorage.isEncryptionAvailable()
+  const d = { keyId, enc, secret: enc ? safeStorage.encryptString(secret).toString('base64') : secret }
+  fs.writeFileSync(credsPath(), JSON.stringify(d), { mode: 0o600 })
+  return true
+}
+
+function activeSkin() {
+  const { list, active } = store.data.skins
+  return list.find(s => s.id === active)?.skin || null
+}
+
+function broadcastSkin() {
+  send(overlay, 'skin', activeSkin())
+  send(panel, 'skins', skinState())
+}
+
+function skinState() {
+  const c = loadCreds()
+  return {
+    hasKey: !!c,
+    keyId: c ? c.keyId.slice(0, 6) + '…' : '',
+    list: store.data.skins.list,
+    active: store.data.skins.active,
+    model: store.data.settings.skinModel,
+    models: Object.keys(MODELS),
+  }
+}
+
+// Any image the OS can open (incl. HEIC on macOS) → JPEG ≤ 1024px
+function preparePhoto(file) {
+  let img = nativeImage.createFromPath(file)
+  if (img.isEmpty()) throw new Error('이미지를 열 수 없어요 (jpg, png, webp, heic)')
+  const { width, height } = img.getSize()
+  if (Math.max(width, height) > 1024) {
+    img = width >= height ? img.resize({ width: 1024, quality: 'best' }) : img.resize({ height: 1024, quality: 'best' })
+  }
+  return img.toJPEG(90)
+}
+
+async function generateSkin(file) {
+  const creds = loadCreds()
+  if (!creds) throw new Error('Higgsfield API 키를 먼저 넣어 주세요')
+  const hf = new Higgsfield(creds)
+  const photo = preparePhoto(file)
+  const template = fs.readFileSync(path.join(__dirname, 'assets', 'skin-template.png'))
+  const images = await hf.makeCharacter({
+    photo, photoType: 'image/jpeg', template,
+    model: store.data.settings.skinModel,
+    variants: 2,
+    onProgress: (stage) => send(panel, 'skin-progress', stage),
+  })
+  return images.map(b => 'data:image/png;base64,' + b.toString('base64'))
 }
 
 // ---------- summon hotkey ----------
@@ -433,6 +508,7 @@ function registerIpc() {
   ipcMain.handle('state:get', () => ({
     settings: store.data.settings,
     hotkeyOk,
+    skin: activeSkin(),
     pet: store.data.pet,
     platform: process.platform,
     port: PORT,
@@ -470,11 +546,64 @@ function registerIpc() {
   ipcMain.handle('pet:action', (_, action) => action === 'summon' ? summon() : petAction(String(action)))
   // while the panel records a new shortcut, the old one must not fire
   ipcMain.handle('hotkey:pause', (_, paused) => { if (paused) globalShortcut.unregisterAll(); else registerHotkey() })
+  ipcMain.handle('open-external', (_, url) => {
+    if (typeof url === 'string' && /^https:\/\//.test(url)) shell.openExternal(url)
+  })
   ipcMain.handle('open-folder', (_, cwd) => {
     if (typeof cwd === 'string' && path.isAbsolute(cwd)) shell.openPath(cwd)
   })
   ipcMain.handle('test-notify', (_, kind) => testNotification(kind === 'done' ? 'done' : 'permission'))
   ipcMain.handle('hook:reinstall', () => !!syncHook())
+
+  // custom looks
+  ipcMain.handle('panel:pin', (_, pinned) => { panelPinned = !!pinned })
+  ipcMain.handle('skin:state', () => skinState())
+  ipcMain.handle('skin:set-key', (_, keyId, secret) => {
+    saveCreds(String(keyId || '').trim(), String(secret || '').trim())
+    return skinState()
+  })
+  ipcMain.handle('skin:pick-photo', async () => {
+    panelPinned = true
+    try {
+      const r = await dialog.showOpenDialog(panel, {
+        title: '내 사진 고르기',
+        properties: ['openFile'],
+        filters: [{ name: '사진', extensions: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'] }],
+      })
+      return r.canceled ? null : r.filePaths[0]
+    } finally {
+      panel?.show()
+    }
+  })
+  ipcMain.handle('skin:preview-photo', (_, file) => {
+    try { return 'data:image/jpeg;base64,' + preparePhoto(String(file)).toString('base64') } catch { return null }
+  })
+  ipcMain.handle('skin:generate', async (_, file) => {
+    try { return { images: await generateSkin(String(file)) } } catch (e) { return { error: e.message } }
+  })
+  ipcMain.handle('skin:save', (_, skin, name) => {
+    if (!skin || !Array.isArray(skin.texture)) return skinState()
+    const id = Date.now().toString(36)
+    const list = store.data.skins.list
+    list.unshift({ id, name: String(name || '내 클로디').slice(0, 20), createdAt: Date.now(), skin })
+    if (list.length > SKINS_MAX) list.length = SKINS_MAX
+    store.data.skins.active = id
+    store.save()
+    broadcastSkin()
+    return skinState()
+  })
+  ipcMain.handle('skin:use', (_, id) => {
+    const ok = !id || store.data.skins.list.some(s => s.id === id)
+    if (ok) { store.data.skins.active = id || ''; store.save(); broadcastSkin() }
+    return skinState()
+  })
+  ipcMain.handle('skin:delete', (_, id) => {
+    store.data.skins.list = store.data.skins.list.filter(s => s.id !== id)
+    if (store.data.skins.active === id) store.data.skins.active = ''
+    store.save()
+    broadcastSkin()
+    return skinState()
+  })
 
   ipcMain.on('menu:pet', () => {
     const s = store.data.settings

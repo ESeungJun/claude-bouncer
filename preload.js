@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 function on(channel) {
   return (cb) => {
@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('api', {
   onSessionBusy: on('session-busy'),
   onPet: on('pet'),
   onPanelTab: on('panel-tab'),
+  onSkin: on('skin'),
+  onSkins: on('skins'),
+  onSkinProgress: on('skin-progress'),
 
   // state
   getState: () => ipcRenderer.invoke('state:get'),
@@ -40,9 +43,22 @@ contextBridge.exposeInMainWorld('api', {
   clearHistory: () => ipcRenderer.invoke('history:clear'),
   focusSession: (id) => ipcRenderer.invoke('session:focus', id),
   openFolder: (cwd) => ipcRenderer.invoke('open-folder', cwd),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
   testNotify: (kind) => ipcRenderer.invoke('test-notify', kind),
   reinstallHook: () => ipcRenderer.invoke('hook:reinstall'),
   pauseHotkey: (paused) => ipcRenderer.invoke('hotkey:pause', !!paused),
+
+  // custom looks
+  pinPanel: (pinned) => ipcRenderer.invoke('panel:pin', !!pinned),
+  skinState: () => ipcRenderer.invoke('skin:state'),
+  setHiggsfieldKey: (id, secret) => ipcRenderer.invoke('skin:set-key', id, secret),
+  pickPhoto: () => ipcRenderer.invoke('skin:pick-photo'),
+  previewPhoto: (file) => ipcRenderer.invoke('skin:preview-photo', file),
+  pathForFile: (file) => { try { return webUtils.getPathForFile(file) } catch { return '' } },
+  generateSkin: (file) => ipcRenderer.invoke('skin:generate', file),
+  saveSkin: (skin, name) => ipcRenderer.invoke('skin:save', skin, name),
+  useSkin: (id) => ipcRenderer.invoke('skin:use', id),
+  deleteSkin: (id) => ipcRenderer.invoke('skin:delete', id),
 
   // panel
   togglePanel: (tab) => ipcRenderer.invoke('panel:toggle', tab),

@@ -21,6 +21,7 @@
   }
   CB.world = world
   Sound.setEnabled(state.settings.sound)
+  CB.Sprites.setSkin(state.skin)
 
   const pet = new Pet(world)
   pet.load(state.pet)
@@ -297,6 +298,16 @@
   api.onData((d) => {
     world.data = d
     notify.onData(d)
+  })
+
+  api.onSkin((skin) => {
+    CB.Sprites.setSkin(skin)
+    pet.lastPose = ''
+    if (world.settings.dnd) return
+    play.stop()
+    pet.emote('star', 5)
+    Sound.play('levelup')
+    pet.celebrate(1.6, { line: skin ? '새 모습 어때?' : '원래대로 돌아왔어!', emote: 'heart' })
   })
 
   api.onSessionBusy(() => {

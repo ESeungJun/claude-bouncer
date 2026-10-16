@@ -14,7 +14,8 @@
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
     "test": "node --test test/*.test.js",
-    "sprites": "node tools/sprite-sheet.js docs/sprite-sheet.png 8"
+    "sprites": "node tools/sprite-sheet.js docs/sprite-sheet.png 8",
+    "template": "node tools/sprite-sheet.js --template assets/skin-template.png"
   },
   "devDependencies": {
     "electron": "^32.2.0",

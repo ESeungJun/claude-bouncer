@@ -264,7 +264,10 @@
 
   // ---------- wiring ----------
 
-  Sprites.blit($('#logo'), Sprites.petCanvas({ expr: 'happy', mouth: 'smile' }), 2)
+  function renderLogo() { Sprites.blit($('#logo'), Sprites.petCanvas({ expr: 'happy', mouth: 'smile' }), 2) }
+  renderLogo()
+  // maker.js swaps the active look; redraw the faces that show it
+  window.CBPanel = { onSkinChanged: () => { renderLogo(); renderPet() } }
 
   const state = await api.getState()
   settings = { ...state.settings, hotkeyOk: state.hotkeyOk }

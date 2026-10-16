@@ -104,7 +104,16 @@ function render(grids, { scale, cols, pad, bg }) {
   return encodePng(W, H, img)
 }
 
-if (require.main === module) {
+// The reference image sent to Higgsfield when making a skin from a photo.
+function writeSkinTemplate(out) {
+  const S = loadSprites()
+  fs.writeFileSync(out, render([S.composePet({})], { scale: 40, cols: 1, pad: 4, bg: '#ffffff' }))
+}
+
+if (require.main === module && process.argv[2] === '--template') {
+  writeSkinTemplate(process.argv[3] || 'assets/skin-template.png')
+  console.log('wrote skin template')
+} else if (require.main === module) {
   const out = process.argv[2] || 'sprite-sheet.png'
   const scale = Number(process.argv[3]) || 8
   const S = loadSprites()
@@ -113,4 +122,4 @@ if (require.main === module) {
   console.log(`wrote ${out} (${POSES.map(p => p[0]).join(', ')})`)
 }
 
-module.exports = { loadSprites, render, encodePng, POSES }
+module.exports = { loadSprites, render, encodePng, POSES, writeSkinTemplate }
