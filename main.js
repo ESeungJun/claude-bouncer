@@ -71,7 +71,9 @@ const BROWSER_APPS = { 'Google Chrome': 'Google Chrome', 'Microsoft Edge': 'Micr
 function openFolderSafely(p) {
   if (typeof p !== 'string' || !path.isAbsolute(p)) return
   try {
-    if (!fs.statSync(p).isDirectory() || /\.app\/?$/i.test(p)) return
+    // macOS opens package folders (.app, .prefPane, .workflow, …) like files
+    const PACKAGE = /\.(app|prefpane|workflow|pkg|mpkg|bundle|saver|plugin|kext|qlgenerator|wdgt|action|service|component|appex|framework|mdimporter|xpc)\/?$/i
+    if (!fs.statSync(p).isDirectory() || PACKAGE.test(p)) return
   } catch { return }
   shell.openPath(p)
 }
@@ -269,19 +271,26 @@ const KIND_TITLE = {
   attention: '👀 확인이 필요해요',
 }
 
+const liveNotifications = new Map() // keep references so 'click' survives GC
+
 function showSystemNotification(n) {
   if (!Notification.isSupported()) return
   const where = [n.projectName, n.branch && `🌿 ${n.branch}`, n.terminal?.label].filter(Boolean).join(' · ')
   const body = n.kind === 'done' ? (n.prompt || n.summary || '응답을 마쳤어요') : n.message
   const sys = new Notification({ title: `${KIND_TITLE[n.kind] || 'Claude'} — ${n.projectName}`, subtitle: where, body, silent: true })
-  sys.on('click', () => openNotification(n.id))
+  liveNotifications.set(n.id, sys)
+  const forget = () => liveNotifications.delete(n.id)
+  sys.on('click', () => { forget(); openNotification(n.id) })
+  sys.on('close', forget)
   sys.show()
+  if (liveNotifications.size > 50) liveNotifications.delete(liveNotifications.keys().next().value)
 }
 
 // claude.ai: ask the extension to bring the tab forward; if it isn't
 // listening, just open the conversation in the browser.
 function focusWebChat(t) {
-  const listening = extCommands.waiting > 0 && Date.now() - ext.seenAt < 60000
+  // the extension re-polls every ≤25s while a claude.ai tab is open
+  const listening = Date.now() - ext.seenAt < 40000
   if (listening && t.tabId != null) {
     extCommands.push({ type: 'focus', tabId: t.tabId, windowId: t.windowId })
     const appName = BROWSER_APPS[t.browser]

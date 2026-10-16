@@ -172,3 +172,16 @@ test('claude.ai chats become sessions named by their title', () => {
   // only claude.ai URLs are kept
   assert.strictEqual(buildTerminal({ source: 'web', url: 'file:///etc/passwd' }).url, '')
 })
+
+test('submit without a tty keeps the tab we already know; branch is cached', () => {
+  let reads = 0
+  const t = tracker({ readBranch: () => { reads++; return 'main' } })
+  t.handle({ ...base, kind: 'stop' })
+  t.handle({ session_id: 's1', cwd: '/work/my-app', term_program: 'iTerm.app', kind: 'submit', prompt: 'next' })
+  const s = t.listSessions().find(x => x.id === 's1')
+  assert.strictEqual(s.terminal.tty, '/dev/ttys004')
+  assert.strictEqual(reads, 1, 'git branch read once within 30s')
+  t.advance(31000)
+  t.handle({ ...base, kind: 'stop' })
+  assert.strictEqual(reads, 2)
+})
