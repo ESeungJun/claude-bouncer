@@ -3,3 +3,7 @@ dist/
 release/
 .DS_Store
 .claude/
+
+# local media (not part of the app)
+*.mp4
+*.mov
