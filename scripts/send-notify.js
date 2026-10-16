@@ -41,8 +41,9 @@ process.stdin.on('data', (chunk) => {
 })
 process.stdin.on('end', () => send())
 process.stdin.on('error', () => process.exit(0))
-// No stdin piped (manual test) → send after a tick anyway.
-setTimeout(() => { if (!raw) send() }, 80)
+// Run by hand in a terminal (stdin is a TTY, nothing piped) → send right away.
+// When Claude Code pipes the payload we always wait for 'end', even if it's slow.
+if (process.stdin.isTTY) send()
 // Hard stop: never hang a Claude turn.
 setTimeout(() => process.exit(0), 3000).unref()
 
@@ -64,7 +65,9 @@ function send() {
     wt_session: env.WT_SESSION || '',
     tmux: env.TMUX || '',
     tmux_pane: env.TMUX_PANE || '',
-    tty: controllingTty(),
+    // the tab's tty only matters for cards (stop / notification); the app keeps
+    // the last one per session, so prompt submits stay fast
+    tty: kind === 'stop' || kind === 'notification' ? controllingTty() : '',
   })
   // The prompt text is only needed for submit events; keep other payloads small.
   if (kind !== 'submit') delete payload.prompt
