@@ -24,7 +24,8 @@
 
 - [왜 만들었나](#왜-만들었나)
 - [주요 기능](#주요-기능)
-- [빠른 시작](#빠른-시작)
+- [설치](#설치)
+- [소스에서 실행](#소스에서-실행)
 - [사용법](#사용법)
 - [claude.ai 웹 연결](#claudeai-웹-연결)
 - [나만의 캐릭터 만들기](#나만의-캐릭터-만들기)
@@ -75,7 +76,28 @@ Claude Bouncer는 바탕화면에 작은 도트 펫을 띄워요. 평소엔 화�
 
 사진을 넣으면 [Higgsfield](https://higgsfield.ai)가 나를 닮은 도트 캐릭터로 만들어줘요 — [아래](#나만의-캐릭터-만들기) 참고.
 
-## 빠른 시작
+## 설치
+
+[Releases](https://github.com/ESeungJun/claude-bouncer/releases/latest)에서 내 컴퓨터에 맞는 **설치 파일 하나만** 받으면 돼요. git이나 Node.js는 필요 없어요.
+
+| 운영체제 | 파일 |
+| --- | --- |
+| macOS (Apple 칩 M1~) | `Claude-Bouncer-x.y.z-mac-arm64.dmg` |
+| macOS (Intel) | `Claude-Bouncer-x.y.z-mac-x64.dmg` |
+| Windows 10/11 | `Claude-Bouncer-x.y.z-win-setup.exe` |
+
+`.zip`은 dmg 대신 쓰는 같은 앱이고, `SHA256SUMS`는 받은 파일이 맞는지 확인하는 체크섬이에요 (`shasum -a 256 -c SHA256SUMS --ignore-missing`).
+
+**macOS 첫 실행** — Apple 공증을 받지 않은 앱이라 "Apple은 'Claude Bouncer'에 … 악성 코드가 없음을 확인할 수 없습니다"가 떠요. dmg에서 앱을 응용 프로그램 폴더로 옮긴 뒤 한 번 열어보고, **시스템 설정 → 개인정보 보호 및 보안** 아래쪽의 **그래도 열기**를 누르세요. "손상되었기 때문에 열 수 없습니다"가 뜨거나 그래도 열기 버튼이 없으면 터미널에서 한 번 실행하세요.
+```bash
+xattr -dr com.apple.quarantine "/Applications/Claude Bouncer.app"
+```
+
+**Windows 첫 실행** — SmartScreen이 막으면 **추가 정보 → 실행**을 누르세요.
+
+설치 후 처음 켜면 Claude Code 훅이 자동으로 등록돼요. 메뉴바(트레이) 아이콘 → **테스트 알림**으로 확인해 보세요. 소스로 실행하던 Claude Bouncer가 있다면 먼저 종료하세요 (둘이 같은 포트를 써요). claude.ai 웹 알림을 쓰려면 아래 [claude.ai 웹 연결](#claudeai-웹-연결)을 따라 확장 프로그램을 불러오세요.
+
+## 소스에서 실행
 
 **필요한 것:** macOS 또는 Windows 10/11 · [Node.js](https://nodejs.org) 18 이상 · [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
 

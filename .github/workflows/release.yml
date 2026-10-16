@@ -65,6 +65,8 @@ jobs:
         env:
           # unsigned builds for now (no code-signing certificates yet)
           CSC_IDENTITY_AUTO_DISCOVERY: false
+      # only the installers people download: no electron-updater .blockmap /
+      # latest*.yml (there is no auto-updater)
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: installers-${{ runner.os }}
@@ -72,8 +74,6 @@ jobs:
             dist/*.dmg
             dist/*.zip
             dist/*.exe
-            dist/*.blockmap
-            dist/latest*.yml
           if-no-files-found: error
 
   publish:
@@ -87,7 +87,7 @@ jobs:
           path: dist
           merge-multiple: true
       - name: Checksums
-        run: cd dist && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt
+        run: cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS
       - name: Draft release v${{ needs.test.outputs.version }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
