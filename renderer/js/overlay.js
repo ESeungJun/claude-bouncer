@@ -114,12 +114,12 @@
     }
     const later = document.createElement('button')
     later.className = 'm-later'
-    later.textContent = kind === 'menu' ? '닫기' : '나중에'
+    // "닫기" only closes the popup (the pet waits a while before asking again)
+    later.textContent = '닫기'
     later.addEventListener('click', (e) => {
       e.stopPropagation()
       if (performance.now() - menuShownAt < CB.ARM_MS) return
       closeMenu()
-      if (kind !== 'menu') pet.sad(1.6, pick(Pet.LINES.decline))
     })
     menu.replaceChildren(head, grid, later)
     menu.classList.add('show')
