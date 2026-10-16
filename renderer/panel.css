@@ -144,8 +144,9 @@ input[type="checkbox"]:checked::after { left: 18px; background: #fff; }
 .chip.on { border-color: var(--clay); }
 .chip canvas { height: 32px; width: auto; }
 .chip span { font-size: 9px; color: #cbbcae; max-width: 48px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chip .del { position: absolute; top: -7px; right: -7px; width: 15px; height: 15px; padding: 0; border: 1px solid #4a3d35; background: #2a231f; color: #a8988c; font-size: 10px; line-height: 12px; display: none; }
-.chip:hover .del { display: block; }
+.chip .del { position: absolute; top: -7px; right: -7px; width: 15px; height: 15px; padding: 0; border: 1px solid #4a3d35; background: #2a231f; color: #a8988c; font-size: 10px; line-height: 12px; }
+.chip .del:hover { color: #fff; border-color: #ff8a80; background: #5a2a26; }
+.chip .del.confirm { width: auto; padding: 0 4px; color: #fff; background: #b8433c; border-color: #ff8a80; }
 .mk-style { margin-top: 6px; }
 .mk-style button { flex: 1; font-size: 11px; padding: 5px 4px; }
 .mk-connect { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
@@ -163,6 +164,10 @@ input[type="checkbox"]:checked::after { left: 18px; background: #fff; }
 .drop:hover, .drop.over { border-color: var(--clay); color: #fff; }
 .drop img { width: 48px; height: 48px; object-fit: cover; display: none; border: 2px solid #4a3d35; }
 .drop img.on { display: block; }
+.photo-wrap { position: relative; display: none; }
+.photo-wrap:has(img.on) { display: block; }
+.photo-x { position: absolute; top: -6px; right: -6px; width: 16px; height: 16px; padding: 0; border: 1px solid #4a3d35; background: #2a231f; color: #cbbcae; font-size: 11px; line-height: 13px; }
+.photo-x:hover { color: #fff; border-color: #ff8a80; background: #5a2a26; }
 .mk-progress { margin-top: 6px; color: #ffd84d; font-size: 11px; min-height: 0; }
 .mk-progress:empty { display: none; }
 .mk-progress.err { color: #ff8a80; }
@@ -177,6 +182,8 @@ input[type="checkbox"]:checked::after { left: 18px; background: #fff; }
 .mk-opts.on { display: flex; }
 .mk-opts label { display: flex; align-items: center; gap: 4px; }
 .mk-opts .mk-btn { margin-left: auto; }
+.mk-opts .link { font-size: 10px; }
+.mk-opts .link:hover { color: #ff8a80; }
 .mk-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 10px; color: #8b7b70; }
 .mk-foot .link { margin-left: auto; font-size: 10px; }
 .maker .hint { margin: 8px 0 0; font-size: 10px; }
