@@ -130,7 +130,7 @@ claude.ai 웹 채팅은 Claude Code 훅이 없어서, 작은 브라우저 확장
 
 Chrome · Edge · Brave · Arc 등 크로미움 브라우저에서 동작해요.
 
-1. ⚙ 설정 → **claude.ai 웹 연결** → **설치 방법**을 누르면 `extension` 폴더가 열려요.
+1. ⚙ 설정 → **claude.ai 웹 연결** → **설치 방법** → **📁 확장 폴더 열기**. 앱이 접속 토큰을 넣은 확장 사본을 앱 데이터 폴더에 만들어 두니, 그 폴더를 불러오면 돼요.
 2. 주소창에 `chrome://extensions` (Edge는 `edge://extensions`) → 오른쪽 위 **개발자 모드** 켜기
 3. **압축해제된 확장 프로그램을 로드합니다** → `extension` 폴더 선택 → claude.ai 탭 새로고침
 

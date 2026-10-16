@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('api', {
   // state
   getState: () => ipcRenderer.invoke('state:get'),
   savePet: (pet) => ipcRenderer.invoke('pet:save', pet),
+  savePetNow: (pet) => ipcRenderer.sendSync('pet:save-now', pet),
   setSetting: (key, value) => ipcRenderer.invoke('settings:set', key, value),
 
   // overlay plumbing
@@ -51,14 +52,14 @@ contextBridge.exposeInMainWorld('api', {
   pauseHotkey: (paused) => ipcRenderer.invoke('hotkey:pause', !!paused),
 
   // custom looks
-  pinPanel: (pinned) => ipcRenderer.invoke('panel:pin', !!pinned),
+  pinPanel: (pinned, reason = 'maker') => ipcRenderer.invoke('panel:pin', !!pinned, reason),
   skinState: () => ipcRenderer.invoke('skin:state'),
   skinPresets: () => ipcRenderer.invoke('skin:presets'),
   sendRequest: (form) => ipcRenderer.invoke('request:send', form),
   higgsfieldLogin: () => ipcRenderer.invoke('skin:mcp-login'),
   higgsfieldLogout: () => ipcRenderer.invoke('skin:mcp-logout'),
   refreshSkinState: () => ipcRenderer.invoke('skin:refresh'),
-  estimateSkin: () => ipcRenderer.invoke('skin:estimate'),
+  estimateSkin: (style) => ipcRenderer.invoke('skin:estimate', style),
   setHiggsfieldKey: (id, secret) => ipcRenderer.invoke('skin:set-key', id, secret),
   pickPhoto: () => ipcRenderer.invoke('skin:pick-photo'),
   previewPhoto: (file) => ipcRenderer.invoke('skin:preview-photo', file),

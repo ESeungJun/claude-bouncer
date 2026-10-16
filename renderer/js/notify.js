@@ -7,12 +7,7 @@ window.CB = window.CB || {}
 ;(function () {
   const { clamp } = CB.util
 
-  const KIND = {
-    done: { icon: '✓', label: '작업 완료', cls: 'k-done' },
-    permission: { icon: '🔐', label: '권한 요청', cls: 'k-need' },
-    input: { icon: '💬', label: '입력 대기', cls: 'k-wait' },
-    attention: { icon: '👀', label: '확인 필요', cls: 'k-info' },
-  }
+  const KIND = CB.KINDS
 
   const isNeed = (n) => n.kind !== 'done'
   const ARM_MS = 700 // ignore clicks this soon after a popup appears (it may have landed under a click)
@@ -59,12 +54,7 @@ window.CB = window.CB || {}
     return `${Math.floor(m / 60)}시간 ${m % 60}분`
   }
 
-  function el(tag, cls, text) {
-    const e = document.createElement(tag)
-    if (cls) e.className = cls
-    if (text !== undefined) e.textContent = text
-    return e
-  }
+  const el = CB.el
 
   class Notify {
     constructor(world, pet) {
@@ -253,5 +243,4 @@ window.CB = window.CB || {}
   }
 
   CB.Notify = Notify
-  CB.notifyKinds = KIND
 })()
