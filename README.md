@@ -230,6 +230,12 @@ npm run sprites    # regenerate docs/sprite-sheet.png
 npm run template   # regenerate assets/skin-template.png (reference sent to Higgsfield)
 ```
 
+### Releasing
+
+- `master` is for development; every change lands through a pull request.
+- `release` is what ships. To release: bump `version` in `package.json` on master, then open a pull request **master → release** and merge it.
+- Merging runs [`.github/workflows/release.yml`](.github/workflows/release.yml): tests → a **draft** GitHub release `v<version>` → macOS (Apple Silicon + Intel) and Windows installers attached. Check it, then press *Publish release*. A version that's already published is never overwritten.
+
 ```
 main.js                 app lifecycle, overlay + panel windows, tray, IPC, hotkey
 lib/
