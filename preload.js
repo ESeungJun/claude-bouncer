@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('api', {
   // custom looks
   pinPanel: (pinned) => ipcRenderer.invoke('panel:pin', !!pinned),
   skinState: () => ipcRenderer.invoke('skin:state'),
+  sendRequest: (form) => ipcRenderer.invoke('request:send', form),
   higgsfieldLogin: () => ipcRenderer.invoke('skin:mcp-login'),
   higgsfieldLogout: () => ipcRenderer.invoke('skin:mcp-logout'),
   refreshSkinState: () => ipcRenderer.invoke('skin:refresh'),

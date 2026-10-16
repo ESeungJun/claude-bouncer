@@ -68,6 +68,19 @@
 
         <div id="mk-saved" class="mk-saved"></div>
 
+        <div id="mk-request" class="mk-request">
+          <div class="mk-req-head">🙋 힉스필드 계정이 없다면</div>
+          <div class="mk-sub small">위의 기본 캐릭터(고양이 · 강아지 · 주먹밥)를 쓰거나, 사진을 보내주시면 개발자가 만들어서 메일로 보내드려요.</div>
+          <button id="req-open" class="link small">제작 요청 보내기 →</button>
+          <div id="req-form" class="req-form">
+            <input id="req-email" type="email" placeholder="답장 받을 이메일" autocomplete="email" />
+            <textarea id="req-message" rows="2" maxlength="1000" placeholder="원하는 느낌을 적어주세요 (예: 안경 꼭 넣어주세요!)"></textarea>
+            <div class="req-photo"><span id="req-photo-name">위에서 고른 사진이 함께 가요</span></div>
+            <label class="req-consent"><input type="checkbox" id="req-consent" /> 캐릭터 제작을 위해 사진과 이메일을 개발자에게 보내는 데 동의해요 (제작 후 삭제)</label>
+            <button id="req-send" class="mk-btn wide">요청 보내기</button>
+          </div>
+        </div>
+
         <div id="mk-connect" class="mk-connect">
           <button id="hf-login" class="mk-btn wide">🔗 Higgsfield 계정으로 연결</button>
           <div class="mk-sub small">브라우저에서 로그인하면 내 Higgsfield 크레딧으로 만들어요 (MCP 연결)</div>
