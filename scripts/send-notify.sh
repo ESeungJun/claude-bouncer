@@ -29,10 +29,15 @@ if [ "$KIND" = stop ] || [ "$KIND" = notification ]; then
   done
 fi
 
+# port: digits only (anything else could point the request somewhere else)
+PORT="${CLAUDE_BOUNCER_PORT:-17891}"
+case "$PORT" in ""|*[!0-9]*) PORT=17891 ;; esac
+
 # header-safe: one line, printable ASCII, capped
 h() { printf '%s' "$1" | tr -cd '[:print:]' | cut -c1-200; }
 
-curl -s -m 2 -o /dev/null -X POST "http://127.0.0.1:${CLAUDE_BOUNCER_PORT:-17891}/notify" \
+# --noproxy: never send this through an HTTP proxy from the environment
+curl -s -m 2 --noproxy '*' -o /dev/null -X POST "http://127.0.0.1:$PORT/notify" \
   -H 'Content-Type: application/json' \
   -H "X-Claude-Bouncer-Token: $TOKEN" \
   -H "X-CB-Kind: $KIND" \

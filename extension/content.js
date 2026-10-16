@@ -67,6 +67,12 @@ new MutationObserver(check).observe(document.documentElement, {
 })
 setInterval(check, 700)
 
+// Closing or reloading the tab mid-answer: tell the app so the chat doesn't
+// stay "working" forever.
+window.addEventListener('pagehide', () => {
+  if (streaming) send('end', { sessionKey })
+})
+
 // Keep the background worker awake while claude.ai is open, so clicking a card
 // in the app can bring this tab back right away.
 let port = null

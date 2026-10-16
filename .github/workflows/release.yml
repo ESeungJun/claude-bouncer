@@ -4,9 +4,13 @@ name: Release
 #   master  — day-to-day development (feature PRs)
 #   release — what ships. Open a PR master → release (with the version bumped
 #             in package.json); merging it runs this workflow:
-#             tests → draft GitHub release v<version> → macOS + Windows
-#             installers attached to it.
+#             tests → macOS + Windows installers → draft GitHub release
+#             v<version> with them attached.
 # Nothing is public until you press "Publish release" on GitHub.
+#
+# The build jobs run every dependency's install scripts, so they get
+# read-only permissions and no stored token; only the small publish job,
+# which installs nothing, can write the release.
 on:
   push:
     branches: [release]
@@ -20,14 +24,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  prepare:
+  test:
     runs-on: macos-latest
-    permissions:
-      contents: write
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
@@ -36,50 +40,64 @@ jobs:
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npm test
-      - name: Create the draft release (refuse to overwrite a published one)
+
+  build:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: --mac
+          - os: windows-latest
+            target: --win
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build installers (not published from here)
+        run: npx electron-builder ${{ matrix.target }} --publish never
+        env:
+          # unsigned builds for now (no code-signing certificates yet)
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - uses: ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: installers-${{ runner.os }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest*.yml
+          if-no-files-found: error
+
+  publish:
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Draft release v${{ needs.test.outputs.version }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.v.outputs.version }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.test.outputs.version }}
         run: |
-          if gh release view "v$VERSION" --json isDraft --jq .isDraft 2>/dev/null | grep -q false; then
+          state=$(gh release view "v$VERSION" --json isDraft --jq .isDraft 2>/dev/null || echo none)
+          if [ "$state" = "false" ]; then
             echo "v$VERSION is already published — bump the version in package.json first."; exit 1
           fi
-          gh release view "v$VERSION" >/dev/null 2>&1 || \
-            gh release create "v$VERSION" --draft --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes
-
-  mac:
-    needs: prepare
-    runs-on: macos-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Build and attach to the draft release
-        run: npx electron-builder --mac --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # unsigned builds for now (no Apple code-signing certificate yet)
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-
-  windows:
-    needs: prepare
-    runs-on: windows-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Build and attach to the draft release
-        run: npx electron-builder --win --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+          # a draft from an earlier run of the same version points at an older commit: recreate it
+          if [ "$state" = "true" ]; then gh release delete "v$VERSION" --yes; fi
+          gh release create "v$VERSION" --draft --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes dist/*

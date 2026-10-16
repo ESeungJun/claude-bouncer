@@ -61,7 +61,7 @@
     saveTimer = setTimeout(() => { api.savePet(pet.exportStats()); pet.dirtyStats = false }, 800)
   }
   setInterval(() => { if (pet.dirtyStats) world.saveSoon() }, 30000)
-  window.addEventListener('beforeunload', () => api.savePet(pet.exportStats()))
+  window.addEventListener('beforeunload', () => { try { api.savePetNow(pet.exportStats()) } catch {} })
 
   // ---------- invitation / quick menu bubble ----------
 
@@ -74,11 +74,12 @@
   let menuShownAt = 0
   let menuSide = null
 
+  // Action ids match lib/actions.js (tray / right-click menus) and the panel.
   const ACTIONS = {
     feed: () => play.feed(),
     ball: () => play.startBall(),
-    catch: () => play.startGame('catch'),
-    tag: () => play.startGame('tag'),
+    'game:catch': () => play.startGame('catch'),
+    'game:tag': () => play.startGame('tag'),
     sleep: () => { play.stop(); pet.sleep(rand(60, 120)) },
     panel: () => api.togglePanel('pet'),
   }
@@ -92,8 +93,8 @@
     const items = [
       ['feed', '🍪 밥 주기'],
       ['ball', '⚽ 공놀이'],
-      ['catch', '🎮 쿠키 받기'],
-      ['tag', '🏃 술래잡기'],
+      ['game:catch', '🎮 쿠키 받기'],
+      ['game:tag', '🏃 술래잡기'],
     ]
     if (kind === 'menu') items.push(['sleep', '💤 재우기'], ['panel', '📋 상태'])
     const head = document.createElement('div')
@@ -326,6 +327,8 @@
   api.onDisplay((d) => {
     world.w = d.width
     world.h = d.height
+    // the cursor feed for the new screen is ~33 ms away; use the position main sent
+    if (d.cursor) { world.cursor.x = d.cursor.x; world.cursor.y = d.cursor.y; world.cursor.inside = true }
     if (d.reason === 'notify' || d.reason === 'summon' || d.reason === 'follow') {
       // arrive from the bottom edge, under the cursor
       pet.x = clamp(world.cursor.x, pet.pw, world.w - pet.pw)
@@ -338,11 +341,7 @@
   api.onAction((a) => {
     closeMenu()
     if (a === 'summon') return summon()
-    if (a === 'feed') return play.feed()
-    if (a === 'ball') return play.startBall()
-    if (a === 'game:catch') return play.startGame('catch')
-    if (a === 'game:tag') return play.startGame('tag')
-    if (a === 'sleep') { play.stop(); pet.sleep(rand(60, 120)) }
+    if (ACTIONS[a] && a !== 'panel') ACTIONS[a]()
   })
 
   // Hotkey / tray summon: pop right in front of the cursor. Far away → teleport
@@ -393,7 +392,21 @@
 
   let last = performance.now()
   let needTick = 0
+  // One bad frame (e.g. a broken skin) must not freeze the pet for good:
+  // schedule the next frame first, and contain errors per frame.
+  let frameErrors = 0
   function frame(now) {
+    requestAnimationFrame(frame)
+    try { step(now) } catch (e) {
+      if (frameErrors++ < 5) console.error('[claude-bouncer] frame error:', e)
+      if (frameErrors === 20 && CB.Sprites.getSkin()) {
+        // a look that can't be drawn: fall back to the classic Claude
+        CB.Sprites.setSkin(null)
+        pet.setScale(world.settings.scale)
+      }
+    }
+  }
+  function step(now) {
     const dt = Math.min(0.05, (now - last) / 1000)
     last = now
     world.uptime += dt
@@ -414,7 +427,6 @@
       menuSide = pos.side
       menu.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`
     }
-    requestAnimationFrame(frame)
   }
   requestAnimationFrame(frame)
 
