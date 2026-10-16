@@ -212,6 +212,7 @@ function createPanel() {
 
 function showPanel(tab) {
   if (!panel) return
+  if (panel.isVisible() && panel.isFocused()) { if (tab) send(panel, 'panel-tab', tab); return }
   const cursor = screen.getCursorScreenPoint()
   const { x, y, width, height } = screen.getDisplayNearestPoint(cursor).workArea
   const [w, h] = panel.getSize()
@@ -223,8 +224,10 @@ function showPanel(tab) {
   panel.focus()
 }
 
+// Open (or bring forward) the panel. It only closes when it's already the
+// window you're looking at — a panel hidden behind other windows reopens.
 function togglePanel(tab) {
-  if (panel?.isVisible()) panel.hide()
+  if (panel?.isVisible() && panel.isFocused() && !tab) panel.hide()
   else showPanel(tab)
 }
 
