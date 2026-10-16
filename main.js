@@ -62,6 +62,16 @@ let panelPinned = false
 // Resolve send-notify.js to a real, on-disk file. In a packaged build it sits
 // inside app.asar.unpacked (see asarUnpack in package.json); `node` can't
 // execute files from inside the asar archive.
+// Hook payloads come from any local process, so only ever open real folders
+// (never a file or an app bundle, which openPath would launch).
+function openFolderSafely(p) {
+  if (typeof p !== 'string' || !path.isAbsolute(p)) return
+  try {
+    if (!fs.statSync(p).isDirectory() || /\.app\/?$/i.test(p)) return
+  } catch { return }
+  shell.openPath(p)
+}
+
 function sendNotifyPath() {
   return path
     .join(__dirname, 'scripts', 'send-notify.js')
@@ -264,7 +274,7 @@ async function openNotification(id) {
   tracker.markRead(id)
   saveHistory()
   broadcastData()
-  await focusTerminal(n, { openPath: p => shell.openPath(p) })
+  await focusTerminal(n, { openPath: openFolderSafely })
 }
 
 function testNotification(kind) {
@@ -560,7 +570,7 @@ function registerIpc() {
   ipcMain.handle('history:clear', () => { tracker.clear(); saveHistory(); broadcastData() })
   ipcMain.handle('session:focus', (_, id) => {
     const s = tracker.listSessions().find(x => x.id === id)
-    if (s) return focusTerminal({ terminal: s.terminal, cwd: s.cwd }, { openPath: p => shell.openPath(p) })
+    if (s) return focusTerminal({ terminal: s.terminal, cwd: s.cwd }, { openPath: openFolderSafely })
   })
 
   ipcMain.handle('panel:toggle', (_, tab) => togglePanel(tab))
@@ -572,9 +582,7 @@ function registerIpc() {
   ipcMain.handle('open-external', (_, url) => {
     if (typeof url === 'string' && /^https:\/\//.test(url)) shell.openExternal(url)
   })
-  ipcMain.handle('open-folder', (_, cwd) => {
-    if (typeof cwd === 'string' && path.isAbsolute(cwd)) shell.openPath(cwd)
-  })
+  ipcMain.handle('open-folder', (_, cwd) => openFolderSafely(cwd))
   ipcMain.handle('test-notify', (_, kind) => testNotification(kind === 'done' ? 'done' : 'permission'))
   ipcMain.handle('hook:reinstall', () => !!syncHook())
 
