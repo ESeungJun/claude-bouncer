@@ -139,7 +139,7 @@ The settings row turns green ("연결됨") once the extension talks to the app. 
 2. Drop in a photo (or click to pick one) and press **닮은 캐릭터 만들기** (*Make my character*). It takes 30–60 seconds.
 3. Pick one of the two versions → **이걸로 할래** (*Use this one*). Saved looks can be swapped back any time.
 
-**No Higgsfield account?** Pick one of the built-in looks — 🐱 cat, 🐶 puppy or 🍙 onigiri — or send a photo with **제작 요청 보내기** (*Request one*) and the maintainer makes it for you and replies by email.
+**No Higgsfield account?** Pick one of the built-in looks — 🐱 cat, 🐶 puppy or 🍙 onigiri — or pick a photo and press **✉️ 직접 요청하기** (*Request one*): a compose window sends it (with your note and reply address) to the maintainer, who makes the character and replies by email.
 
 <p align="center"><img src="docs/presets.png" width="560" alt="Built-in looks" /></p>
 
