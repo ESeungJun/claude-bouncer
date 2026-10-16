@@ -5,7 +5,7 @@ const {
 const path = require('path')
 const os = require('os')
 const fs = require('fs')
-const { installClaudeHook } = require('./scripts/install-hook')
+const { installClaudeHook, hookScriptPath } = require('./scripts/install-hook')
 const { SessionTracker } = require('./lib/sessions')
 const { JsonStore } = require('./lib/store')
 const { focusTerminal } = require('./lib/focus')
@@ -63,7 +63,7 @@ const extCommands = commandQueue()
 const ext = { browser: '', seenAt: 0 }
 const BROWSER_APPS = { 'Google Chrome': 'Google Chrome', 'Microsoft Edge': 'Microsoft Edge', Brave: 'Brave Browser', Opera: 'Opera', Vivaldi: 'Vivaldi', Chromium: 'Chromium', Chrome: 'Google Chrome' }
 
-// Resolve send-notify.js to a real, on-disk file. In a packaged build it sits
+// Resolve the hook script (send-notify.sh / .ps1) to a real, on-disk file. In a packaged build it sits
 // inside app.asar.unpacked (see asarUnpack in package.json); `node` can't
 // execute files from inside the asar archive.
 // Hook payloads come from any local process, so only ever open real folders
@@ -85,15 +85,26 @@ function extensionFolder() {
 }
 
 function sendNotifyPath() {
-  return path
-    .join(__dirname, 'scripts', 'send-notify.js')
+  return hookScriptPath(path.join(__dirname, 'scripts'))
     .replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`)
+}
+
+// Shared secret for the hook → app requests, readable only by this user.
+function hookToken() {
+  const file = path.join(os.homedir(), '.claude', 'claude-bouncer.token')
+  try {
+    const t = fs.readFileSync(file, 'utf8').trim()
+    if (/^[a-f0-9]{48}$/.test(t)) return t
+  } catch {}
+  const t = require('crypto').randomBytes(24).toString('hex')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, t, { mode: 0o600 })
+  return t
 }
 
 function syncHook({ uninstall = false } = {}) {
   try {
-    // the installed app runs the hook with its own binary (no Node.js needed)
-    return installClaudeHook({ sendNotifyPath: sendNotifyPath(), runner: app.isPackaged ? process.execPath : null, uninstall })
+    return installClaudeHook({ sendNotifyPath: sendNotifyPath(), uninstall })
   } catch (e) {
     console.error('[claude-bouncer] hook sync failed:', e.message)
     return null
@@ -356,8 +367,8 @@ function loadCreds() {
 
 function saveCreds(keyId, secret) {
   if (!keyId || !secret) { try { fs.unlinkSync(credsPath()) } catch {} return false }
-  const enc = safeStorage.isEncryptionAvailable()
-  const d = { keyId, enc, secret: enc ? safeStorage.encryptString(secret).toString('base64') : secret }
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('이 컴퓨터에서는 키를 안전하게 저장할 수 없어요 (OS 키체인 사용 불가)')
+  const d = { keyId, enc: true, secret: safeStorage.encryptString(secret).toString('base64') }
   fs.writeFileSync(credsPath(), JSON.stringify(d), { mode: 0o600 })
   return true
 }
@@ -397,7 +408,8 @@ function skinState() {
     hasKey: !!c,
     keyId: c ? c.keyId.slice(0, 6) + '…' : '',
     list: store.data.skins.list,
-    presets: PRESETS.map(p => ({ id: p.id, name: p.name, skin: presetSkin(p.id) })).filter(p => p.skin),
+    // names only; the (large, never-changing) pixel data comes once via skin:presets
+    presets: PRESETS.filter(p => presetSkin(p.id)).map(p => ({ id: p.id, name: p.name })),
     active: store.data.skins.active,
     model: store.data.settings.skinModel,
     models: Object.keys(MODELS),
@@ -462,6 +474,16 @@ async function sendRequest({ email, message, photo, consent }) {
   form.append('attachment', new Blob([jpeg], { type: 'image/jpeg' }), 'photo.jpg')
   const res = await fetch(REQUEST_TO, { method: 'POST', body: form, headers: { Accept: 'application/json' } })
   if (!res.ok) throw new Error(`보내지 못했어요 (${res.status}). 잠시 후 다시 시도해 주세요`)
+  // FormSubmit answers 200 even when it didn't forward anything (form not
+  // activated yet, rejected, …), so read what it said
+  const text = await res.text().catch(() => '')
+  let reply = null
+  try { reply = JSON.parse(text) } catch {}
+  const failed = reply ? String(reply.success) === 'false' : /activat|captcha|error/i.test(text)
+  if (failed) {
+    console.error('[claude-bouncer] request not delivered:', (reply?.message || text).slice(0, 200))
+    throw new Error('요청 창구가 아직 준비 중이라 전달되지 않았어요. 잠시 후 다시 시도해 주세요')
+  }
   lastRequestAt = Date.now()
   return true
 }
@@ -678,6 +700,7 @@ function registerIpc() {
   // custom looks
   ipcMain.handle('panel:pin', (_, pinned) => { panelPinned = !!pinned })
   ipcMain.handle('skin:state', () => skinState())
+  ipcMain.handle('skin:presets', () => Object.fromEntries(PRESETS.map(p => [p.id, presetSkin(p.id)]).filter(([, s]) => s)))
   ipcMain.handle('request:send', async (_, form) => {
     try { await sendRequest(form || {}); return { ok: true } } catch (e) { return { error: e.message } }
   })
@@ -704,7 +727,7 @@ function registerIpc() {
     try { return await mcp().estimate(PROMPT, 2) } catch { return null }
   })
   ipcMain.handle('skin:set-key', (_, keyId, secret) => {
-    saveCreds(String(keyId || '').trim(), String(secret || '').trim())
+    try { saveCreds(String(keyId || '').trim(), String(secret || '').trim()) } catch (e) { return { ...skinState(), error: e.message } }
     return skinState()
   })
   ipcMain.handle('skin:pick-photo', async () => {
@@ -787,6 +810,7 @@ app.whenReady().then(() => {
   createTray()
   startFeeds()
   startServer({
+    token: hookToken(),
     onEvent: onHookEvent,
     commands: extCommands,
     onHello: (d) => {
@@ -805,6 +829,12 @@ app.whenReady().then(() => {
       send(overlay, 'display', { width: d.workArea.width, height: d.workArea.height, reason: 'metrics' })
     }
   })
+})
+
+// Our windows only ever show local files: block navigation and pop-ups.
+app.on('web-contents-created', (_, contents) => {
+  contents.on('will-navigate', (e) => e.preventDefault())
+  contents.setWindowOpenHandler(() => ({ action: 'deny' }))
 })
 
 app.on('second-instance', () => showPanel('inbox'))

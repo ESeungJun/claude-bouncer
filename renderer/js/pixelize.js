@@ -297,12 +297,14 @@
       }
       g.push(row)
     }
-    return keepEnclosedWhite(g)
+    return keepEnclosedWhite(g, bg)
   }
 
-  // Background-coloured cells connected to the frame's edge are background;
-  // the ones enclosed by the character (inside its outline) are part of it.
-  function keepEnclosedWhite(g) {
+  // Background-coloured cells connected to the frame's edge are background.
+  // Enclosed ones are usually part of the character (cream rice, a white
+  // chest) — unless the whole enclosed patch is the exact background colour,
+  // which means a real gap (between an arm and the body, inside a handle).
+  function keepEnclosedWhite(g, bg) {
     const h = g.length, w = g[0].length
     const isMaybe = (c) => c === null || (c && c.maybe)
     const outside = g.map(row => row.map(() => false))
@@ -315,9 +317,29 @@
       outside[y][x] = true
       stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1])
     }
+    // group the remaining (enclosed) maybe-cells into patches
+    const patch = g.map(row => row.map(() => -1))
+    const holes = new Set()
+    let id = 0
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (outside[y][x] || patch[y][x] >= 0 || !g[y][x] || !g[y][x].maybe) continue
+      const cells = []
+      const st = [[x, y]]
+      while (st.length) {
+        const [cx, cy] = st.pop()
+        if (cx < 0 || cy < 0 || cx >= w || cy >= h || patch[cy][cx] >= 0 || outside[cy][cx]) continue
+        const c = g[cy][cx]
+        if (!c || !c.maybe) continue
+        patch[cy][cx] = id
+        cells.push(c.maybe)
+        st.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1])
+      }
+      if (bg && dist(median(cells), bg) < 6) holes.add(id)
+      id++
+    }
     return g.map((row, y) => row.map((c, x) => {
       if (!isMaybe(c)) return c
-      if (outside[y][x] || c === null) return null
+      if (outside[y][x] || c === null || holes.has(patch[y][x])) return null
       return c.maybe
     }))
   }
