@@ -323,7 +323,10 @@ window.CB = window.CB || {}
   // Sheets are drawn at their own (finer) pixel size, so they need a smaller
   // on-screen scale to end up about as big as the classic pet.
   function pixelScale(scale, skin = activeSkin) {
-    return isSheet(skin) ? (scale >= 4 ? 2 : 1) : scale
+    if (!isSheet(skin)) return scale
+    // small characters (e.g. the onigiri, 28 px) get doubled so every look ends up similar in size
+    const base = skin.h < 36 ? 2 : 1
+    return scale >= 4 ? base + 1 : base
   }
 
   // The active skin (null = classic Claude orange). Panels can pass one explicitly.

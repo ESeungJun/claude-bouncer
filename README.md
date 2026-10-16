@@ -88,7 +88,7 @@ cd claude-bouncer
 start.bat                # Windows — or double-click it in Explorer
 ```
 
-The first run installs dependencies and registers the Claude Code hooks. To check that everything works, open the menu-bar (tray) icon → **테스트 알림** (*Test notification*).
+The first run installs dependencies and registers the Claude Code hooks. (The packaged app runs its hooks with its own executable, so Node.js isn't needed there.) To check that everything works, open the menu-bar (tray) icon → **테스트 알림** (*Test notification*).
 
 <details>
 <summary><b>Build a standalone app</b></summary>
@@ -139,6 +139,10 @@ The settings row turns green ("연결됨") once the extension talks to the app. 
 2. Drop in a photo (or click to pick one) and press **닮은 캐릭터 만들기** (*Make my character*). It takes 30–60 seconds.
 3. Pick one of the two versions → **이걸로 할래** (*Use this one*). Saved looks can be swapped back any time.
 
+**No Higgsfield account?** Pick one of the built-in looks — 🐱 cat, 🐶 puppy or 🍙 onigiri — or send a photo with **제작 요청 보내기** (*Request one*) and the maintainer makes it for you and replies by email.
+
+<p align="center"><img src="docs/presets.png" width="560" alt="Built-in looks" /></p>
+
 **Two styles**
 
 - **🎨 Pixel character** (default) — works with a photo of you, a pet, a plant, an object or a character you drew. It doesn't have to be human-shaped: a cat stays a four-legged cat, a cactus stays in its pot, and poses fit the body (paw steps, hops, wiggles, curling up to sleep). It becomes a cute chibi that stays recognizable: colors, silhouette, hairstyle (or ears, horns, tail, fur pattern), eyes, facial hair, accessories and clothing patterns are carried over, nothing is invented, and it never turns realistic. Higgsfield draws six poses (idle, blink, two walk frames, happy jump, asleep); the app cuts the sheet, detects the art's native pixel size and animates with those frames.
@@ -182,7 +186,7 @@ Claude Code ──hook──▶ send-notify.js ──POST 127.0.0.1:17891──�
 - Clicking a card only ever opens real folders, never files or apps named in a notification.
 - Prompts and transcript summaries stay on your machine (`~/Library/Application Support/claude-bouncer` on macOS).
 - Higgsfield sign-in tokens and API keys are encrypted with the OS keychain (Electron `safeStorage`).
-- Only the custom look feature sends anything out: your photo goes to Higgsfield to generate the character.
+- Only the custom look feature sends anything out: your photo goes to Higgsfield to generate the character, or — if you use *Request one* and tick the consent box — to the maintainer by email (via FormSubmit).
 
 ## Troubleshooting
 

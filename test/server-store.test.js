@@ -149,3 +149,11 @@ test('hook installer keeps the user\'s commands in a shared group', () => {
     fs.rmSync(dir, { recursive: true })
   }
 })
+
+test('installed app runs hooks with its own binary (no Node.js needed)', () => {
+  const { buildHookCommand, isOurs } = require('../scripts/install-hook')
+  const cmd = buildHookCommand('/Applications/Claude Bouncer.app/Contents/Resources/app.asar.unpacked/scripts/send-notify.js', 'stop', '/Applications/Claude Bouncer.app/Contents/MacOS/Claude Bouncer')
+  assert.strictEqual(cmd, 'ELECTRON_RUN_AS_NODE=1 "/Applications/Claude Bouncer.app/Contents/MacOS/Claude Bouncer" "/Applications/Claude Bouncer.app/Contents/Resources/app.asar.unpacked/scripts/send-notify.js" stop')
+  assert.ok(isOurs(cmd))
+  assert.strictEqual(buildHookCommand('/x/claude-bouncer/scripts/send-notify.js', 'end'), 'node "/x/claude-bouncer/scripts/send-notify.js" end')
+})
