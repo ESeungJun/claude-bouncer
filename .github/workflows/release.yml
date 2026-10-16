@@ -8,32 +8,60 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            target: --mac
-          - os: windows-latest
-            target: --win
-    runs-on: ${{ matrix.os }}
+  check:
+    runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: npm
+      - name: Tag matches package.json version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "${{ github.ref_name }}" != "v$VERSION" ]; then
+            echo "Tag ${{ github.ref_name }} does not match package.json version $VERSION"; exit 1
+          fi
+      - run: npm ci
+      - run: npm test
+
+  # mac first, then Windows, so both attach to the same draft release
+  mac:
+    needs: check
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
           cache: npm
       - run: npm ci
-      - name: Test
-        if: runner.os == 'macOS'
-        run: npm test
       - name: Build and attach to the draft release
-        run: npx electron-builder ${{ matrix.target }} --publish always
+        run: npx electron-builder --mac --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # unsigned builds (no Apple / Windows code-signing certificate yet)
+          # unsigned builds for now (no Apple code-signing certificate yet)
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+  windows:
+    needs: mac
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build and attach to the draft release
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false

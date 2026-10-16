@@ -86,7 +86,7 @@ cd claude-bouncer
 start.bat                # Windows — 탐색기에서 더블클릭해도 돼요
 ```
 
-처음 실행하면 의존성 설치와 Claude Code 훅 등록이 자동으로 진행돼요. (설치형 앱은 자체 실행 파일로 훅을 돌려서 Node.js가 없어도 돼요.) 잘 되는지 보려면 메뉴바(트레이) 아이콘 → **테스트 알림**을 눌러보세요.
+처음 실행하면 의존성 설치와 Claude Code 훅 등록이 자동으로 진행돼요. (훅은 sh · PowerShell 스크립트라서 알림을 받는 데 Node.js가 필요 없어요.) 잘 되는지 보려면 메뉴바(트레이) 아이콘 → **테스트 알림**을 눌러보세요.
 
 <details>
 <summary><b>Node.js가 없다면</b></summary>
@@ -167,13 +167,13 @@ Chrome · Edge · Brave · Arc 등 크로미움 브라우저에서 동작해요.
 ## 동작 원리
 
 ```
-Claude Code ──훅──▶ send-notify.js ──POST 127.0.0.1:17891──▶ Claude Bouncer ──▶ 펫 + 카드
+Claude Code ──훅──▶ send-notify.sh/.ps1 ──POST 127.0.0.1:17891──▶ Claude Bouncer ──▶ 펫 + 카드
   Stop / Notification /       터미널 앱 · 탭 tty ·               세션 추적, 대화 기록에서
   UserPromptSubmit / SessionEnd   tmux pane 추가                  요청 · 결과 요약 읽기
 ```
 
 1. 앱이 실행될 때 `~/.claude/settings.json`에 `Stop` · `Notification` · `UserPromptSubmit` · `SessionEnd` 훅 4개를 등록해요. 다른 훅은 건드리지 않고 자기 것만 갱신해요.
-2. 훅 스크립트가 이벤트에 "어디서 왔는지"(터미널 앱, 탭의 tty, tmux pane)를 붙여 앱으로 보내요. 앱이 꺼져 있어도 Claude 세션엔 아무 영향이 없어요.
+2. 훅 스크립트(macOS·Linux는 `send-notify.sh`, Windows는 `send-notify.ps1` — Node.js 불필요)가 이벤트에 "어디서 왔는지"(터미널 앱, 탭의 tty, tmux · Orca 패널)를 붙여 사용자별 토큰과 함께 앱으로 보내요. 앱이 꺼져 있어도 Claude 세션엔 아무 영향이 없어요.
 3. 앱이 세션별 상태를 추적하고, 대화 기록에서 마지막 요청과 결과 요약을 읽어 카드를 만들어요.
 4. 펫은 화면 전체를 덮는 투명 창 위에서 움직이고, 펫 · 카드 · 메뉴 위에서만 마우스를 받아요. 나머지 클릭은 그대로 아래 앱으로 통과해요.
 
@@ -188,10 +188,11 @@ Claude Code ──훅──▶ send-notify.js ──POST 127.0.0.1:17891──�
 
 ## 개인정보와 보안
 
-- 로컬 서버는 `127.0.0.1`에서만 열리고 JSON 요청만 받으며, 웹 페이지에서 온 요청(브라우저 확장이 아닌 `Origin`)은 거절해서 가짜 알림을 막아요.
+- 로컬 서버는 `127.0.0.1`에서만 열리고 `Host` 헤더를 확인하며, JSON 요청만 받고 웹 페이지 요청은 거절해요. 훅 요청은 나만 읽을 수 있는 무작위 토큰(`~/.claude/claude-bouncer.token`)이 있어야 해서 다른 프로그램이 가짜 카드를 넣을 수 없어요. claude.ai 확장은 claude.ai 채팅만 알릴 수 있어요.
+- 설치형 앱은 Electron 보안 퓨즈를 켜서(`ELECTRON_RUN_AS_NODE` · `NODE_OPTIONS` · 디버거 플래그 차단) 앱을 다른 용도로 악용할 수 없게 했고, 창 안에서의 페이지 이동 · 팝업도 막아요.
 - 카드를 눌러 폴더를 열 때는 실제 폴더만 열고, 알림에 담긴 파일이나 앱은 절대 실행하지 않아요.
 - 요청 · 결과 요약은 내 컴퓨터에만 저장돼요 (macOS: `~/Library/Application Support/claude-bouncer`).
-- Higgsfield 로그인 토큰과 API 키는 OS 키체인으로 암호화해서 저장해요 (Electron `safeStorage`).
+- Higgsfield 로그인 토큰과 API 키는 OS 키체인으로 암호화해서 저장하고 평문으로는 절대 저장하지 않아요. API 키는 Higgsfield API 주소로만 보내요.
 - 외부로 나가는 건 "나만의 캐릭터" 기능뿐이에요 — 캐릭터를 만들기 위해 사진이 Higgsfield로 전송되거나, "제작 요청"에서 동의하고 보내면 개발자 메일로 전달돼요 (FormSubmit 경유).
 
 ## 문제 해결
@@ -205,7 +206,7 @@ Claude Code ──훅──▶ send-notify.js ──POST 127.0.0.1:17891──�
 <details>
 <summary><b>알림이 안 와요</b></summary>
 
-`~/.claude/settings.json`에 `send-notify.js`를 가리키는 훅이 있는지 확인하고, 메뉴바 아이콘 → **테스트 알림**이 되는지 보세요. 메뉴바 아이콘 → **Claude Code 훅 → 다시 설치**로 다시 등록할 수 있어요.
+`~/.claude/settings.json`에 `send-notify.sh`(Windows는 `send-notify.ps1`)를 가리키는 훅이 있는지 확인하고, 메뉴바 아이콘 → **테스트 알림**이 되는지 보세요. 메뉴바 아이콘 → **Claude Code 훅 → 다시 설치**로 다시 등록할 수 있어요.
 </details>
 
 <details>
@@ -255,7 +256,7 @@ renderer/
   overlay.*, js/        펫: 스프라이트, 행동, 카드, 게임, 효과음
   js/pixelize.js        생성된 그림 → 도트 프레임
   panel.*, maker.js     알림함, 세션, 펫, 설정, 나만의 캐릭터
-scripts/                훅 디스패처 + 설치 스크립트
+scripts/                훅 스크립트(send-notify.sh / .ps1) + 설치 스크립트
 tools/                  스프라이트 시트 · 스킨 미리보기 · PNG 도구
 ```
 

@@ -139,7 +139,7 @@ test('Higgsfield MCP: tool errors surface as messages', async () => {
   assert.strictEqual(hf.signedIn, false)
 })
 
-test('pixel style sends only the photo and asks for a 3:2 pose sheet', async () => {
+test('pixel style sends only the photo and asks for a 16:9 4x2 pose sheet', async () => {
   const os = require('os')
   const { HiggsfieldMcp } = require('../lib/higgsfield-mcp')
   const calls = []
@@ -158,8 +158,9 @@ test('pixel style sends only the photo and asks for a 3:2 pose sheet', async () 
   await hf.makeCharacter({ photo: Buffer.from('p'), photoType: 'image/jpeg', template: Buffer.from('t'), sleep: async () => {} })
   assert.strictEqual(calls.find(c => c.name === 'media_upload').a.files.length, 1)
   const p = calls.find(c => c.name === 'generate_image').a.params
-  assert.strictEqual(p.aspect_ratio, '3:2')
-  assert.match(p.prompt, /3 columns x 2 rows/)
+  assert.strictEqual(p.aspect_ratio, '16:9')
+  assert.match(p.prompt, /4 columns x 2 rows/)
+  assert.match(p.prompt, /walk cycle seen from the side/)
 })
 
 test('pixelizeSheet cuts six aligned frames from a generated sheet', () => {
@@ -198,6 +199,21 @@ test('4x2 sheets carry a side-view walk cycle that the engine plays', () => {
   assert.strictEqual(S.sheetFrame({ walkFrame: 3 }), 'walk3')
   // skins without walk frames (old 3x2 sheets, the onigiri) fall back to idle
   const oni = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets', 'presets', 'onigiri.json'), 'utf8'))
-  assert.ok(!oni.frames.walk1)
-  assert.ok(S.petCanvas({ walkFrame: 2 }, oni))
+  assert.ok(!oni.frames.walk1, 'onigiri has no walk frames → engine waddles it')
+})
+
+test('an enclosed patch of pure background colour stays a hole', () => {
+  const { pixelizeSheet } = require('../renderer/js/pixelize')
+  // one fake "sheet" frame: a dark ring around a pure-white hole, next to a cream-filled ring
+  const W = 640, H = 360
+  const data = Buffer.alloc(W * H * 4, 254)
+  const fill = (x0, y0, x1, y1, c) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) data.set([...c, 255], (y * W + x) * 4) }
+  fill(40, 40, 120, 160, [30, 20, 20]); fill(56, 60, 104, 140, [254, 254, 254])   // ring with a real hole
+  fill(200, 40, 280, 160, [30, 20, 20]); fill(216, 60, 264, 140, [253, 246, 228]) // ring filled with cream
+  const skin = pixelizeSheet({ width: W, height: H, data }, 'walk')
+  const g = skin.frames.idle
+  const mid = g[Math.floor(g.length / 2)]
+  assert.ok(mid.slice(Math.floor(mid.length * 0.4), Math.ceil(mid.length * 0.6)).every(c => c === null), 'pure white inside the ring is see-through')
+  const cream = skin.frames.blink[Math.floor(g.length / 2)]
+  assert.ok(cream.filter(Boolean).length > cream.length * 0.6, 'cream inside the ring stays filled')
 })

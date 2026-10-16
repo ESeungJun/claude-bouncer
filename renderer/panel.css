@@ -157,6 +157,9 @@ input[type="checkbox"]:checked::after { left: 18px; background: #fff; }
 .req-form input[type="email"], .req-form textarea { font: inherit; font-size: 11px; padding: 6px; background: #1f1a17; border: 2px solid #4a3d35; color: #fff; outline: none; resize: none; }
 .req-form input[type="email"]:focus, .req-form textarea:focus { border-color: var(--clay); }
 .req-photo { font-size: 10px; color: #a8988c; }
+.req-status { font-size: 11px; color: #ffd84d; }
+.req-status:empty { display: none; }
+.req-status.err { color: #ff8a80; }
 .req-consent { display: flex; align-items: flex-start; gap: 6px; font-size: 10px; color: #cbbcae; line-height: 1.5; }
 .req-consent input { flex: none; margin-top: 1px; }
 .chip.preset { border-style: dashed; }

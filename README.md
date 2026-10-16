@@ -88,7 +88,7 @@ cd claude-bouncer
 start.bat                # Windows — or double-click it in Explorer
 ```
 
-The first run installs dependencies and registers the Claude Code hooks. (The packaged app runs its hooks with its own executable, so Node.js isn't needed there.) To check that everything works, open the menu-bar (tray) icon → **테스트 알림** (*Test notification*).
+The first run installs dependencies and registers the Claude Code hooks. (The hooks are plain shell / PowerShell scripts, so Node.js isn't needed to receive notifications.) To check that everything works, open the menu-bar (tray) icon → **테스트 알림** (*Test notification*).
 
 <details>
 <summary><b>Build a standalone app</b></summary>
@@ -161,13 +161,13 @@ Each run makes two images (about 3 credits) from your Higgsfield account. Prefer
 ## How it works
 
 ```
-Claude Code ──hook──▶ send-notify.js ──POST 127.0.0.1:17891──▶ Claude Bouncer ──▶ pet + cards
+Claude Code ──hook──▶ send-notify.sh/.ps1 ──POST 127.0.0.1:17891──▶ Claude Bouncer ──▶ pet + cards
   Stop / Notification /         adds terminal app, tab tty,        tracks sessions, reads
   UserPromptSubmit / SessionEnd tmux pane                          the transcript summary
 ```
 
 1. On launch the app registers four hooks in `~/.claude/settings.json` — `Stop`, `Notification`, `UserPromptSubmit`, `SessionEnd` — and only touches its own entries.
-2. The hook script reads the event, adds where it came from (terminal bundle id, the tab's tty, tmux pane) and posts it to the app. It never blocks or fails a Claude turn.
+2. The hook script (`send-notify.sh` on macOS/Linux, `send-notify.ps1` on Windows — no Node.js needed) reads the event, adds where it came from (terminal bundle id, the tab's tty, tmux / Orca pane) and posts it to the app with a per-user token. It never blocks or fails a Claude turn.
 3. The app tracks each session, reads the last prompt and reply from the transcript, and builds the card.
 4. The pet lives on a transparent full-screen overlay that only catches the mouse over the pet, cards and menus; every other click goes straight through to your apps.
 
@@ -182,10 +182,11 @@ Claude Code ──hook──▶ send-notify.js ──POST 127.0.0.1:17891──�
 
 ## Privacy & security
 
-- The local server listens on `127.0.0.1` only, accepts JSON only, and rejects requests from web pages (any `Origin` other than a browser extension), so sites can't post fake notifications.
+- The local server listens on `127.0.0.1` only, checks the `Host` header, accepts JSON only and rejects web pages. Hook requests must carry a random per-user token (`~/.claude/claude-bouncer.token`, readable only by you), so other programs can't inject cards; the claude.ai extension can only report claude.ai chats.
+- The packaged app ships with hardened Electron fuses (no `ELECTRON_RUN_AS_NODE`, no `NODE_OPTIONS`, no inspector flags, app code only from the signed-in asar) and blocks navigation and pop-ups in its windows.
 - Clicking a card only ever opens real folders, never files or apps named in a notification.
 - Prompts and transcript summaries stay on your machine (`~/Library/Application Support/claude-bouncer` on macOS).
-- Higgsfield sign-in tokens and API keys are encrypted with the OS keychain (Electron `safeStorage`).
+- Higgsfield sign-in tokens and API keys are encrypted with the OS keychain (Electron `safeStorage`) and never stored in plain text; the API key is only ever sent to Higgsfield's API host.
 - Only the custom look feature sends anything out: your photo goes to Higgsfield to generate the character, or — if you use *Request one* and tick the consent box — to the maintainer by email (via FormSubmit).
 
 ## Troubleshooting
@@ -199,7 +200,7 @@ Menu-bar icon → **펫 부르기** (*Summon*) or press the hotkey. Check that D
 <details>
 <summary><b>No notifications arrive</b></summary>
 
-Check that `~/.claude/settings.json` has hooks that point to `send-notify.js`, then try menu-bar icon → **테스트 알림**. Menu-bar icon → **Claude Code 훅 → 다시 설치** re-registers the hooks.
+Check that `~/.claude/settings.json` has hooks that point to `send-notify.sh` (Windows: `send-notify.ps1`), then try menu-bar icon → **테스트 알림**. Menu-bar icon → **Claude Code 훅 → 다시 설치** re-registers the hooks.
 </details>
 
 <details>
@@ -243,7 +244,7 @@ renderer/
   overlay.*, js/        the pet: sprites, behaviour, cards, games, sounds
   js/pixelize.js        generated image → pixel frames
   panel.*, maker.js     inbox, sessions, pet, settings, custom look
-scripts/                hook dispatcher + installer
+scripts/                hook scripts (send-notify.sh / .ps1) + installer
 tools/                  sprite sheet / skin preview / PNG helpers
 ```
 
