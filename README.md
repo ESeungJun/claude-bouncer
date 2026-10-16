@@ -141,12 +141,18 @@ The settings row turns green ("연결됨") once the extension talks to the app. 
 
 **Two styles**
 
-- **🎨 Pixel character** (default) — works with a photo of you, a pet or any character image. It becomes a cute chibi that stays recognizable: colors, silhouette, hairstyle (or ears, horns, tail), eyes, facial hair, accessories and clothing patterns are carried over, nothing is invented, and it never turns realistic. Higgsfield draws six poses (idle, blink, two walk frames, happy jump, asleep); the app cuts the sheet, detects the art's native pixel size and animates with those frames.
+- **🎨 Pixel character** (default) — works with a photo of you, a pet, a plant, an object or a character you drew. It doesn't have to be human-shaped: a cat stays a four-legged cat, a cactus stays in its pot, and poses fit the body (paw steps, hops, wiggles, curling up to sleep). It becomes a cute chibi that stays recognizable: colors, silhouette, hairstyle (or ears, horns, tail, fur pattern), eyes, facial hair, accessories and clothing patterns are carried over, nothing is invented, and it never turns realistic. Higgsfield draws six poses (idle, blink, two walk frames, happy jump, asleep); the app cuts the sheet, detects the art's native pixel size and animates with those frames.
 - **🟧 Claudy body** — keeps the classic body and paints your hair, skin tone and clothes on it, so every engine-drawn expression still works. Optional glasses and blush.
 
 Each run makes two images (about 3 credits) from your Higgsfield account. Prefer an API key? Choose **API 키로 연결하기** and paste a Key ID + Secret from [console.higgsfield.ai](https://console.higgsfield.ai).
 
-<p align="center"><img src="docs/custom-look-pixel.png" width="600" alt="Pixel character in several poses" /></p>
+<p align="center">
+  <img src="docs/custom-look-pixel.png" width="600" alt="Pixel character from a photo of a person" /><br/>
+  <img src="docs/custom-look-cat.png" width="600" alt="Pixel character from a cat photo" /><br/>
+  <img src="docs/custom-look-cactus.png" width="470" alt="Pixel character from a cactus photo" />
+</p>
+
+> Well-known copyrighted characters (for example from games or anime) are usually rejected by Higgsfield's content policy; no credits are charged.
 
 ## How it works
 
