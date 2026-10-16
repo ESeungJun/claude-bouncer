@@ -24,7 +24,8 @@ English · [한국어](README.ko.md)
 
 - [Why](#why)
 - [Features](#features)
-- [Quick start](#quick-start)
+- [Install](#install)
+- [Run from source](#run-from-source)
 - [Usage](#usage)
 - [claude.ai in the browser](#claudeai-in-the-browser)
 - [Make it look like you](#make-it-look-like-you)
@@ -77,7 +78,28 @@ Claude Bouncer puts a small pixel pet on your desktop. Most of the time it wande
 
 Turn a photo into your own pixel character with [Higgsfield](https://higgsfield.ai) — see [below](#make-it-look-like-you).
 
-## Quick start
+## Install
+
+Grab **one installer** for your computer from [Releases](https://github.com/ESeungJun/claude-bouncer/releases/latest). No git or Node.js needed.
+
+| OS | File |
+| --- | --- |
+| macOS (Apple silicon, M1+) | `Claude-Bouncer-x.y.z-mac-arm64.dmg` |
+| macOS (Intel) | `Claude-Bouncer-x.y.z-mac-x64.dmg` |
+| Windows 10/11 | `Claude-Bouncer-x.y.z-win-setup.exe` |
+
+The `.zip` files are the same app without the dmg, and `SHA256SUMS` lets you check your download (`shasum -a 256 -c SHA256SUMS --ignore-missing`).
+
+**First launch on macOS** — the app isn't notarized by Apple, so macOS says it can't verify that "Claude Bouncer" is free of malware. Drag the app into Applications, try opening it once, then press **Open Anyway** at the bottom of **System Settings → Privacy & Security**. If macOS says the app "is damaged" or there's no Open Anyway button, run this once in Terminal:
+```bash
+xattr -dr com.apple.quarantine "/Applications/Claude Bouncer.app"
+```
+
+**First launch on Windows** — if SmartScreen stops it, click **More info → Run anyway**.
+
+On first launch the app registers the Claude Code hooks by itself; try the menu-bar (tray) icon → **테스트 알림** (*Test notification*). If you were running Claude Bouncer from source, quit it first (both use the same port). For claude.ai notifications, load the browser extension as described in [claude.ai in the browser](#claudeai-in-the-browser).
+
+## Run from source
 
 **Requirements:** macOS or Windows 10/11 · [Node.js](https://nodejs.org) 18+ · [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
 
