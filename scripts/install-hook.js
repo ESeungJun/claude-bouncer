@@ -15,9 +15,13 @@ const settingsPath = path.join(os.homedir(), '.claude', 'settings.json')
 // capitals, which is why we don't key off the app name), packaged Windows.
 const SEND_NOTIFY_TAIL = 'scripts/send-notify.js'
 
-function buildHookCommand(sendNotifyPath, kind) {
+// runner: the program that executes send-notify.js. Source checkouts use the
+// system `node`; the installed app passes its own executable, run in Node mode
+// (ELECTRON_RUN_AS_NODE), so people without Node.js still get notifications.
+function buildHookCommand(sendNotifyPath, kind, runner) {
   // Normalize to forward slashes so the same matcher works on Windows too.
   const p = String(sendNotifyPath).replace(/\\/g, '/')
+  if (runner) return `ELECTRON_RUN_AS_NODE=1 "${String(runner).replace(/\\/g, '/')}" "${p}" ${kind}`
   return `node "${p}" ${kind}`
 }
 
@@ -35,18 +39,18 @@ function isOurs(cmd, currentPath) {
 
 // Core entry point. Pass the absolute path to send-notify.js for installs;
 // it's ignored when uninstall:true. Returns { installed, removed }.
-function installClaudeHook({ sendNotifyPath, uninstall = false } = {}) {
+function installClaudeHook({ sendNotifyPath, runner = null, uninstall = false } = {}) {
   if (!uninstall && !sendNotifyPath) {
     throw new Error('installClaudeHook: sendNotifyPath is required for install')
   }
 
   const HOOKS = uninstall ? {} : {
-    Stop: buildHookCommand(sendNotifyPath, 'stop'),
-    Notification: buildHookCommand(sendNotifyPath, 'notification'),
+    Stop: buildHookCommand(sendNotifyPath, 'stop', runner),
+    Notification: buildHookCommand(sendNotifyPath, 'notification', runner),
     // submit/end let the app track which sessions are busy and clear
     // notifications you've already answered.
-    UserPromptSubmit: buildHookCommand(sendNotifyPath, 'submit'),
-    SessionEnd: buildHookCommand(sendNotifyPath, 'end'),
+    UserPromptSubmit: buildHookCommand(sendNotifyPath, 'submit', runner),
+    SessionEnd: buildHookCommand(sendNotifyPath, 'end', runner),
   }
 
   let settings = {}
@@ -101,7 +105,7 @@ function installClaudeHook({ sendNotifyPath, uninstall = false } = {}) {
   }
 }
 
-module.exports = { installClaudeHook, isOurs }
+module.exports = { installClaudeHook, isOurs, buildHookCommand }
 
 // --- CLI ---
 if (require.main === module) {
