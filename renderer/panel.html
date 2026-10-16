@@ -149,11 +149,16 @@
       </div>
       <div class="ext-guide" id="ext-guide">
         <ol>
-          <li>Chrome 주소창에 <b>chrome://extensions</b> 입력 (Edge는 edge://extensions)</li>
+          <li>아래 <b>📁 확장 폴더 열기</b>로 <b>extension</b> 폴더를 열어 두세요</li>
+          <li>Chrome 주소창에 <b>chrome://extensions</b> 붙여넣기 (Edge는 edge://extensions) <button id="ext-copy" class="link small">주소 복사</button></li>
           <li>오른쪽 위 <b>개발자 모드</b> 켜기</li>
-          <li><b>압축해제된 확장 프로그램을 로드합니다</b> → 방금 열린 <b>extension</b> 폴더 선택</li>
+          <li><b>압축해제된 확장 프로그램을 로드합니다</b> → <b>extension</b> 폴더 선택</li>
           <li>claude.ai 탭을 새로고침하면 끝!</li>
         </ol>
+        <div class="ext-actions">
+          <button id="ext-folder" class="mk-btn">📁 확장 폴더 열기</button>
+          <span id="ext-path" class="ext-path"></span>
+        </div>
       </div>
       <div class="set">
         <div class="set-label">테스트 알림</div>
@@ -183,6 +188,7 @@
     </div>
   </div>
 
+  <script src="js/common.js"></script>
   <script src="js/sprites.js"></script>
   <script src="js/pixelize.js"></script>
   <script src="panel.js"></script>

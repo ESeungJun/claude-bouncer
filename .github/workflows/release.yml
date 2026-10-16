@@ -1,67 +1,103 @@
 name: Release
 
-# Push a tag like v0.3.0 → macOS (.dmg/.zip, Apple Silicon + Intel) and
-# Windows (.exe installer) builds are attached to a *draft* GitHub release.
+# Release flow
+#   master  — day-to-day development (feature PRs)
+#   release — what ships. Open a PR master → release (with the version bumped
+#             in package.json); merging it runs this workflow:
+#             tests → macOS + Windows installers → draft GitHub release
+#             v<version> with them attached.
 # Nothing is public until you press "Publish release" on GitHub.
+#
+# The build jobs run every dependency's install scripts, so they get
+# read-only permissions and no stored token; only the small publish job,
+# which installs nothing, can write the release.
 on:
   push:
-    tags: ['v*']
+    branches: [release]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  check:
+  test:
     runs-on: macos-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
-      - name: Tag matches package.json version
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          if [ "${{ github.ref_name }}" != "v$VERSION" ]; then
-            echo "Tag ${{ github.ref_name }} does not match package.json version $VERSION"; exit 1
-          fi
+      - id: v
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npm test
 
-  # mac first, then Windows, so both attach to the same draft release
-  mac:
-    needs: check
-    runs-on: macos-latest
-    permissions:
-      contents: write
+  build:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: --mac
+          - os: windows-latest
+            target: --win
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Build and attach to the draft release
-        run: npx electron-builder --mac --publish always
+      - name: Build installers (not published from here)
+        run: npx electron-builder ${{ matrix.target }} --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # unsigned builds for now (no Apple code-signing certificate yet)
+          # unsigned builds for now (no code-signing certificates yet)
           CSC_IDENTITY_AUTO_DISCOVERY: false
+      - uses: ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: installers-${{ runner.os }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest*.yml
+          if-no-files-found: error
 
-  windows:
-    needs: mac
-    runs-on: windows-latest
+  publish:
+    needs: [test, build]
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Build and attach to the draft release
-        run: npx electron-builder --win --publish always
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Draft release v${{ needs.test.outputs.version }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.test.outputs.version }}
+        run: |
+          state=$(gh release view "v$VERSION" --json isDraft --jq .isDraft 2>/dev/null || echo none)
+          if [ "$state" = "false" ]; then
+            echo "v$VERSION is already published — bump the version in package.json first."; exit 1
+          fi
+          # a draft from an earlier run of the same version points at an older commit: recreate it
+          if [ "$state" = "true" ]; then gh release delete "v$VERSION" --yes; fi
+          gh release create "v$VERSION" --draft --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes dist/*

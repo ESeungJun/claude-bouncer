@@ -124,7 +124,7 @@ Chats on claude.ai don't run Claude Code hooks, so a small browser extension (in
 
 Works in Chrome, Edge, Brave, Arc and other Chromium browsers:
 
-1. ⚙ Settings → **claude.ai 웹 연결** → **설치 방법** (*How to install*) opens the `extension` folder.
+1. ⚙ Settings → **claude.ai 웹 연결** → **설치 방법** (*How to install*) → **📁 확장 폴더 열기**. The app keeps a copy of the extension with its access token in its data folder; load that one.
 2. Go to `chrome://extensions` (Edge: `edge://extensions`) and turn on **Developer mode**.
 3. **Load unpacked** → pick the `extension` folder, then refresh your claude.ai tabs.
 
@@ -229,6 +229,12 @@ npm test           # unit tests: sessions, server, store, sprites, skins, Higgsf
 npm run sprites    # regenerate docs/sprite-sheet.png
 npm run template   # regenerate assets/skin-template.png (reference sent to Higgsfield)
 ```
+
+### Releasing
+
+- `master` is for development; every change lands through a pull request.
+- `release` is what ships. To release: bump `version` in `package.json` on master, then open a pull request **master → release** and merge it.
+- Merging runs [`.github/workflows/release.yml`](.github/workflows/release.yml): tests → a **draft** GitHub release `v<version>` → macOS (Apple Silicon + Intel) and Windows installers attached. Check it, then press *Publish release*. A version that's already published is never overwritten.
 
 ```
 main.js                 app lifecycle, overlay + panel windows, tray, IPC, hotkey

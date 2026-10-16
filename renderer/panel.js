@@ -9,12 +9,7 @@
   let settings = {}
   let pet = {}
 
-  const KIND = {
-    done: ['✓ 완료', 'k-done'],
-    permission: ['🔐 권한', 'k-need'],
-    input: ['💬 입력 대기', 'k-wait'],
-    attention: ['👀 확인', 'k-info'],
-  }
+  const KIND = Object.fromEntries(Object.entries(CB.KINDS).map(([k, v]) => [k, [v.short, v.cls]]))
   const STATUS = {
     working: ['⏳ 작업 중', 's-working'],
     waiting: ['❗ 응답 필요', 'k-need'],
@@ -22,12 +17,7 @@
     idle: ['· 대기', 's-idle'],
   }
 
-  function el(tag, cls, text) {
-    const e = document.createElement(tag)
-    if (cls) e.className = cls
-    if (text !== undefined) e.textContent = text
-    return e
-  }
+  const el = CB.el
 
   function when(ts) {
     const d = new Date(ts)
@@ -191,7 +181,9 @@
     else if (/^F\d{1,2}$/.test(c)) key = c
     else key = { Space: 'Space', Period: '.', Comma: ',', Slash: '/', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']', Backquote: '`', Minus: '-', Equal: '=', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', Enter: 'Enter' }[c] || null
     if (!key) return null
-    if (!mods.length && !/^F\d/.test(key)) return null // a bare letter would hijack typing
+    // needs a real modifier: Shift+C would steal every capital C you type
+    const strong = mods.some(m => m !== 'Shift')
+    if (!strong && !/^F\d/.test(key)) return null
     return [...mods, key].join('+')
   }
 
@@ -261,10 +253,26 @@
     el.textContent = s.connected ? `연결됨 · ${s.browser || '브라우저'}` : '브라우저 확장을 설치하면 웹 채팅도 알려줘요'
     el.classList.toggle('ok', s.connected)
   }
-  $('#ext-install').addEventListener('click', () => {
-    $('#ext-guide').classList.toggle('on')
-    if ($('#ext-guide').classList.contains('on')) api.openExtensionFolder()
+  // The guide stays open (and keeps the panel open) while you switch to
+  // Finder / Chrome to follow it.
+  $('#ext-install').addEventListener('click', async () => {
+    const on = $('#ext-guide').classList.toggle('on')
+    api.pinPanel(on, 'guide')
+    if (on) $('#ext-path').textContent = (await api.extStatus()).folder
   })
+  $('#ext-folder').addEventListener('click', () => api.openExtensionFolder())
+  $('#ext-copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText('chrome://extensions') } catch {}
+    $('#ext-copy').textContent = '복사됨 ✓'
+    setTimeout(() => { $('#ext-copy').textContent = '주소 복사' }, 1500)
+  })
+  // leaving the settings tab closes the guide and lets the panel auto-hide again
+  document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.tab !== 'settings' && $('#ext-guide').classList.contains('on')) {
+      $('#ext-guide').classList.remove('on')
+      api.pinPanel(false, 'guide')
+    }
+  }))
   document.querySelector('[data-tab=settings]').addEventListener('click', renderExt)
   setInterval(renderExt, 15000)
   renderExt()
