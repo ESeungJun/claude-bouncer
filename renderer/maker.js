@@ -36,14 +36,14 @@
 
   // ---------- saved looks ----------
 
-  function chip(id, name, skin) {
-    const c = el('div', 'chip' + ((state.active || '') === id ? ' on' : ''))
+  function chip(id, name, skin, { preset = false } = {}) {
+    const c = el('div', 'chip' + ((state.active || '') === id ? ' on' : '') + (preset ? ' preset' : ''))
     const cv = el('canvas', 'px')
     Sprites.blit(cv, Sprites.petCanvas({ expr: 'happy', mouth: 'smile' }, skin), Sprites.isSheet(skin) ? 1 : 2)
     c.append(cv, el('span', '', name))
     c.title = name
     c.addEventListener('click', async () => { state = await api.useSkin(id); render() })
-    if (id) {
+    if (id && !preset) {
       const del = el('button', 'del', '×')
       del.title = '이 모습 지우기'
       del.addEventListener('click', async (e) => {
@@ -69,7 +69,13 @@
       Sprites.setSkin(active?.skin || null)
       window.CBPanel?.onSkinChanged()
     }
-    $('#mk-saved').replaceChildren(chip('', '기본', null), ...state.list.map(s => chip(s.id, s.name, s.skin)))
+    $('#mk-saved').replaceChildren(
+      chip('', '클로디', null),
+      ...(state.presets || []).map(p => chip(p.id, p.name, p.skin, { preset: true })),
+      ...state.list.map(s => chip(s.id, s.name, s.skin)),
+    )
+    // the request box is for people without Higgsfield
+    $('#mk-request').style.display = state.mcp || state.hasKey ? 'none' : 'block'
     $('#mk-connect').style.display = connected() ? 'none' : 'flex'
     $('#mk-key').style.display = showKeyForm ? 'flex' : 'none'
     $('#mk-keyinfo').textContent = state.mcp
@@ -295,5 +301,33 @@
   api.onSkins((s) => { state = s; render() })
   render()
   if (state.mcp) api.refreshSkinState().then((s) => { state = s; render(); loadCost() })
+  // ---------- "make one for me" request ----------
+
+  $('#req-open').addEventListener('click', () => {
+    $('#req-form').classList.toggle('on')
+    pin()
+  })
+  $('#req-send').addEventListener('click', async () => {
+    const b = $('#req-send')
+    if (!photoPath) { progress('먼저 위에서 사진을 골라 주세요', true); return }
+    b.disabled = true
+    b.textContent = '보내는 중…'
+    const r = await api.sendRequest({
+      email: $('#req-email').value,
+      message: $('#req-message').value,
+      photo: photoPath,
+      consent: $('#req-consent').checked,
+    })
+    b.disabled = false
+    b.textContent = '요청 보내기'
+    if (r.error) { progress(r.error, true); return }
+    progress('요청을 보냈어요! 만들어지면 메일로 보내드릴게요 💌')
+    $('#req-message').value = ''
+    $('#req-consent').checked = false
+    $('#req-form').classList.remove('on')
+  })
+  const syncReqPhoto = () => { $('#req-photo-name').textContent = photoPath ? `📎 ${photoPath.split(/[\\/]/).pop()}` : '위에서 사진을 먼저 골라 주세요' }
+  setInterval(syncReqPhoto, 1000)
+
   window.CBMaker = { setPhoto, showResults } // handy for scripted checks
 })()

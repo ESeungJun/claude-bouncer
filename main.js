@@ -92,7 +92,8 @@ function sendNotifyPath() {
 
 function syncHook({ uninstall = false } = {}) {
   try {
-    return installClaudeHook({ sendNotifyPath: sendNotifyPath(), uninstall })
+    // the installed app runs the hook with its own binary (no Node.js needed)
+    return installClaudeHook({ sendNotifyPath: sendNotifyPath(), runner: app.isPackaged ? process.execPath : null, uninstall })
   } catch (e) {
     console.error('[claude-bouncer] hook sync failed:', e.message)
     return null
@@ -361,8 +362,25 @@ function saveCreds(keyId, secret) {
   return true
 }
 
+// Built-in looks that work without Higgsfield (assets/presets/*.json).
+const PRESETS = [
+  { id: 'preset:cat', name: '고양이', file: 'cat.json' },
+  { id: 'preset:dog', name: '강아지', file: 'dog.json' },
+  { id: 'preset:onigiri', name: '주먹밥', file: 'onigiri.json' },
+]
+const presetCache = new Map()
+function presetSkin(id) {
+  const p = PRESETS.find(x => x.id === id)
+  if (!p) return null
+  if (!presetCache.has(id)) {
+    try { presetCache.set(id, JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'presets', p.file), 'utf8'))) } catch { presetCache.set(id, null) }
+  }
+  return presetCache.get(id)
+}
+
 function activeSkin() {
   const { list, active } = store.data.skins
+  if (active.startsWith('preset:')) return presetSkin(active)
   return list.find(s => s.id === active)?.skin || null
 }
 
@@ -379,6 +397,7 @@ function skinState() {
     hasKey: !!c,
     keyId: c ? c.keyId.slice(0, 6) + '…' : '',
     list: store.data.skins.list,
+    presets: PRESETS.map(p => ({ id: p.id, name: p.name, skin: presetSkin(p.id) })).filter(p => p.skin),
     active: store.data.skins.active,
     model: store.data.settings.skinModel,
     models: Object.keys(MODELS),
@@ -415,6 +434,36 @@ async function generateSkin(file, style) {
     onProgress: (stage) => send(panel, 'skin-progress', stage),
   })
   return images.map(b => 'data:image/png;base64,' + b.toString('base64'))
+}
+
+// ---------- "make one for me" requests ----------
+// No Higgsfield account? People can send a photo and a note; FormSubmit
+// forwards it (with the photo attached) to the maintainer's inbox.
+
+const REQUEST_TO = 'https://formsubmit.co/6951004@gmail.com'
+let lastRequestAt = 0
+
+async function sendRequest({ email, message, photo, consent }) {
+  email = String(email || '').trim()
+  message = String(message || '').trim().slice(0, 1000)
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('답장 받을 이메일을 확인해 주세요')
+  if (!photo) throw new Error('캐릭터로 만들 사진을 골라 주세요')
+  if (!consent) throw new Error('사진 전송에 동의해 주세요')
+  if (Date.now() - lastRequestAt < 60000) throw new Error('잠시 후 다시 보내 주세요')
+  const jpeg = preparePhoto(String(photo))
+  const form = new FormData()
+  form.append('_subject', '[Claude Bouncer] 캐릭터 제작 요청')
+  form.append('_template', 'table')
+  form.append('_captcha', 'false')
+  form.append('_replyto', email)
+  form.append('email', email)
+  form.append('message', message || '(메시지 없음)')
+  form.append('app', `claude-bouncer ${app.getVersion()} · ${process.platform}`)
+  form.append('attachment', new Blob([jpeg], { type: 'image/jpeg' }), 'photo.jpg')
+  const res = await fetch(REQUEST_TO, { method: 'POST', body: form, headers: { Accept: 'application/json' } })
+  if (!res.ok) throw new Error(`보내지 못했어요 (${res.status}). 잠시 후 다시 시도해 주세요`)
+  lastRequestAt = Date.now()
+  return true
 }
 
 // ---------- summon hotkey ----------
@@ -629,6 +678,9 @@ function registerIpc() {
   // custom looks
   ipcMain.handle('panel:pin', (_, pinned) => { panelPinned = !!pinned })
   ipcMain.handle('skin:state', () => skinState())
+  ipcMain.handle('request:send', async (_, form) => {
+    try { await sendRequest(form || {}); return { ok: true } } catch (e) { return { error: e.message } }
+  })
   ipcMain.handle('skin:mcp-login', async () => {
     panelPinned = true
     try {
@@ -687,7 +739,7 @@ function registerIpc() {
     return skinState()
   })
   ipcMain.handle('skin:use', (_, id) => {
-    const ok = !id || store.data.skins.list.some(s => s.id === id)
+    const ok = !id || store.data.skins.list.some(s => s.id === id) || !!presetSkin(id)
     if (ok) { store.data.skins.active = id || ''; store.save(); broadcastSkin() }
     return skinState()
   })
