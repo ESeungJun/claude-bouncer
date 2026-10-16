@@ -176,8 +176,17 @@ test('pixelizeSheet cuts six aligned frames from a generated sheet', () => {
   }
   // the engine maps poses onto frames
   const S = loadSprites()
-  assert.strictEqual(S.sheetFrame({ legs: [2, 1, 2, 1] }), 'walkA')
+  assert.strictEqual(S.sheetFrame({ legs: [2, 1, 2, 1] }), 'idle') // walking waddles the idle frame
   assert.strictEqual(S.sheetFrame({ expr: 'sleep', dy: 2 }), 'sleep')
   assert.strictEqual(S.sheetFrame({ armL: 'up', armR: 'up' }), 'happy')
   assert.strictEqual(JSON.stringify(S.dims(skin)), JSON.stringify({ w: skin.w, h: skin.h }))
+})
+
+test('white parts inside a drawn character stay opaque (only outside white is background)', () => {
+  const oni = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets', 'presets', 'onigiri.json'), 'utf8'))
+  const g = oni.frames.idle
+  const mid = g[Math.floor(g.length * 0.45)]
+  const row = mid.slice(Math.floor(mid.length * 0.35), Math.floor(mid.length * 0.65))
+  assert.ok(row.every(Boolean), 'rice in the middle of the onigiri is filled')
+  assert.strictEqual(g[0][0], null, 'corner stays transparent')
 })
