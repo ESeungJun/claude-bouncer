@@ -1,7 +1,10 @@
 // Pixel sprites, drawn from code so every frame lines up exactly.
 //
-// The pet is an 18×14 grid: 2 rows of headroom for raised arms, a 14×10
-// outlined body (cols 2–15), stubby arms on both sides and four 2-px legs. Faces, arms
+// The pet is an 18×16 grid: 4 rows of headroom (raised arms, hair of custom
+// skins), a 14×10 outlined body (cols 2–15), stubby arms and four 2-px legs.
+// A "skin" (made from a photo, see pixelize.js) recolors the body, arms and
+// legs and adds hair; faces and poses are still drawn here, so every
+// animation keeps working. Faces, arms
 // and legs are composed per frame from a small option object and cached.
 
 window.CB = window.CB || {}
@@ -21,8 +24,8 @@ window.CB = window.CB || {}
   }
 
   const PET_W = 18
-  const PET_H = 14
-  const TOP = 2 // headroom so raised arms can poke above the body
+  const PET_H = 16
+  const TOP = 4 // headroom for raised arms and (with a custom skin) hair
   const LEG_COLS = [[3, 4], [6, 7], [10, 11], [13, 14]]
 
   function grid(w, h) {
@@ -55,6 +58,19 @@ window.CB = window.CB || {}
     for (const y of [top + 1, top + 2]) {
       if (y >= dy + 1 && y <= dy + 8) put(g, joint, y, PAL.B)
     }
+  }
+
+  function drawGlasses(g, lx, ly, dy, color) {
+    const L = 5 + lx
+    const R = 11 + lx
+    const Y = 3 + ly + dy
+    for (const x of [L, R]) {
+      rect(g, x - 1, Y - 1, x + 2, Y - 1, color)
+      rect(g, x - 1, Y + 2, x + 2, Y + 2, color)
+      rect(g, x - 1, Y, x - 1, Y + 1, color)
+      rect(g, x + 2, Y, x + 2, Y + 1, color)
+    }
+    rect(g, L + 3, Y, R - 2, Y, color)
   }
 
   function drawEyes(g, expr, lx, ly, dy) {
@@ -128,8 +144,34 @@ window.CB = window.CB || {}
     }
   }
 
+  // Paint a skin over the engine-drawn body: engine colors → skin colors, then
+  // the texture (body + hair) on top. Raised arms stay in front of the hair.
+  function applySkin(g, skin, dy) {
+    const shift = dy - TOP
+    const legTop = dy + 10
+    for (let y = 0; y < g.length; y++) {
+      for (let x = 0; x < g[0].length; x++) {
+        const c = g[y][x]
+        if (!c) continue
+        if (y >= legTop) g[y][x] = c === PAL.O ? skin.legOutline : skin.leg
+        else if (c === PAL.O) g[y][x] = skin.outline
+        else g[y][x] = skin.arm
+      }
+    }
+    const tex = skin.texture || []
+    for (let ty = 0; ty < tex.length; ty++) {
+      const y = ty + shift
+      for (let x = 0; x < (tex[ty] || []).length; x++) {
+        const c = tex[ty][x]
+        if (!c) continue
+        const inBody = x >= 2 && x <= 15 && ty >= TOP
+        if (inBody || !g[y]?.[x]) put(g, x, y, c)
+      }
+    }
+  }
+
   // opts: { expr, mouth, armL, armR, legs:[h,h,h,h], dy, lx, ly, blush }
-  function composePet(o) {
+  function composePet(o, skin) {
     const g = grid(PET_W, PET_H)
     const dy = (o.dy || 0) + TOP
     // body
@@ -147,7 +189,9 @@ window.CB = window.CB || {}
     })
     drawArm(g, 'L', o.armL || 'mid', dy)
     drawArm(g, 'R', o.armR || 'mid', dy)
-    if (o.blush !== false) {
+    if (skin) applySkin(g, skin, dy)
+    if (skin?.glasses && !['dizzy', 'love'].includes(o.expr)) drawGlasses(g, o.lx || 0, o.ly || 0, dy, skin.glassesColor || PAL.E)
+    if (o.blush !== false && skin?.blush !== false) {
       rect(g, 3, dy + 5, 4, dy + 5, PAL.P)
       rect(g, 13, dy + 5, 14, dy + 5, PAL.P)
     }
@@ -256,11 +300,21 @@ window.CB = window.CB || {}
     return c
   }
 
-  function petCanvas(o) {
-    const key = JSON.stringify(o)
+  // The active skin (null = classic Claude orange). Panels can pass one explicitly.
+  let activeSkin = null
+  let skinSeq = 0
+  function setSkin(skin) {
+    activeSkin = skin && skin.texture ? skin : null
+    if (activeSkin && !activeSkin._id) activeSkin._id = 's' + (++skinSeq)
+    cache.clear()
+  }
+
+  function petCanvas(o, skin = activeSkin) {
+    if (skin && !skin._id) skin._id = 's' + (++skinSeq)
+    const key = (skin ? skin._id + (skin.glasses ? 'g' : '') + (skin.blush === false ? 'n' : '') : '-') + JSON.stringify(o)
     let c = cache.get(key)
     if (!c) {
-      c = toCanvas(composePet(o))
+      c = toCanvas(composePet(o, skin))
       if (cache.size > 400) cache.clear()
       cache.set(key, c)
     }
@@ -293,5 +347,5 @@ window.CB = window.CB || {}
     return c
   }
 
-  CB.Sprites = { PET_W, PET_H, TOP, PAL, composePet, petCanvas, itemCanvas, itemElement, blit, ITEMS }
+  CB.Sprites = { PET_W, PET_H, TOP, setSkin, getSkin: () => activeSkin, PAL, composePet, petCanvas, itemCanvas, itemElement, blit, ITEMS }
 })()

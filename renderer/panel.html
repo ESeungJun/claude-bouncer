@@ -61,6 +61,42 @@
         <button data-act="sleep">💤 재우기</button>
       </div>
       <div class="records" id="records"></div>
+
+      <div class="maker">
+        <div class="mk-head">✨ 나만의 클로디</div>
+        <div class="mk-sub">사진을 넣으면 Higgsfield가 나를 닮은 도트 클로디로 만들어줘요. 모든 표정·놀이가 그대로 동작해요.</div>
+
+        <div id="mk-saved" class="mk-saved"></div>
+
+        <div id="mk-key" class="mk-key">
+          <input id="hf-id" placeholder="API Key ID" autocomplete="off" spellcheck="false" />
+          <input id="hf-secret" type="password" placeholder="API Key Secret" autocomplete="off" />
+          <div class="mk-row">
+            <button id="hf-save" class="mk-btn">키 저장</button>
+            <button id="hf-console" class="link">console.higgsfield.ai 에서 발급 →</button>
+          </div>
+        </div>
+
+        <div id="mk-drop" class="drop" tabindex="0">
+          <img id="mk-photo" alt="" />
+          <span id="mk-drop-text">📷 사진을 끌어다 놓거나 눌러서 고르기</span>
+        </div>
+        <button id="mk-go" class="mk-btn wide" disabled>닮은 클로디 만들기</button>
+        <div id="mk-progress" class="mk-progress"></div>
+
+        <div id="mk-results" class="mk-results"></div>
+        <div id="mk-opts" class="mk-opts">
+          <label><input type="checkbox" id="mk-glasses" /> 안경</label>
+          <label><input type="checkbox" id="mk-blush" checked /> 볼터치</label>
+          <button id="mk-apply" class="mk-btn">이걸로 할래</button>
+        </div>
+
+        <div class="mk-foot">
+          <span id="mk-keyinfo"></span>
+          <button id="mk-key-edit" class="link">키 변경</button>
+        </div>
+        <p class="hint">사진은 Higgsfield 서버로 보내져 이 캐릭터를 만드는 데만 쓰이고, 비용은 내 Higgsfield API 잔액에서 차감돼요 (만들 때마다 이미지 2장).</p>
+      </div>
       <p class="hint">펫을 쓰다듬기(위에서 마우스 좌우로 문지르기) · 클릭 · 드래그해서 던지기 · 더블클릭 메뉴 · 우클릭 메뉴 · <span id="hint-hotkey">⌥⇧C</span> 어디서든 부르기</p>
     </section>
 
@@ -100,6 +136,8 @@
   </main>
 
   <script src="js/sprites.js"></script>
+  <script src="js/pixelize.js"></script>
   <script src="panel.js"></script>
+  <script src="maker.js"></script>
 </body>
 </html>

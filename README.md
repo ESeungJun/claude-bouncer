@@ -52,6 +52,22 @@
 
 <p align="center"><img src="docs/sprite-sheet.png" width="560" alt="sprite sheet" /></p>
 
+### ✨ 나만의 클로디 (사진 → 도트)
+
+<img src="docs/panel-custom-look.png" width="250" align="right" />
+
+패널 🐾 펫 탭에서 사진을 넣으면 [Higgsfield](https://higgsfield.ai)가 **나를 닮은 도트 클로디**로 바꿔줘요. 머리 모양·머리색, 피부색, 옷 색을 입힌 두 가지 버전 중에 고르고 안경·볼터치를 켜고 끌 수 있어요. 만든 모습은 저장해두고 언제든 기본 클로디와 바꿔 입을 수 있어요.
+
+생성된 그림을 그대로 쓰지 않고 앱이 **스프라이트 격자(18×16)에 다시 맞춰 찍기 때문에**, 걷기·표정·게임 같은 모든 동작이 그대로 돼요.
+
+1. [console.higgsfield.ai](https://console.higgsfield.ai)에서 API 키(Key ID + Secret)를 발급하고 잔액을 충전해요 (웹 구독과 별도인 API 잔액)
+2. 패널 → 🐾 펫 → 키 저장 (OS 키체인으로 암호화해서 저장)
+3. 사진을 끌어다 놓거나 골라서 **닮은 클로디 만들기**
+
+사진은 생성을 위해 Higgsfield 서버로 보내져요. 한 번 만들 때 이미지 2장 분량이 API 잔액에서 차감돼요. 모델은 기본 `marketing-studio/image`이고 설정 파일에서 `xai/grok-imagine-image-2.0` 또는 `alibaba/qwen-image-3/edit`로 바꿀 수 있어요.
+
+<p align="center"><img src="docs/custom-look-poses.png" width="520" alt="custom look in every pose" /></p>
+
 ### 설치 — macOS
 
 ```bash
@@ -144,6 +160,10 @@ Clawd's little cousin lives on your desktop. Most of the time it wanders around,
 - **Feed** (drop a cookie anywhere), **fetch** (kick the ball, it kicks it back), **Cookie Catch** (catch cookies, dodge bugs) and **Tag** mini games
 - Hunger / fun / energy drift over time; it comes to you when bored or hungry, sleeps when tired, and levels up as you play
 
+### Make it look like you
+
+Drop a photo into the Pet tab and [Higgsfield](https://higgsfield.ai) repaints Claudy with your hair, skin tone and clothes. The app snaps the result back onto the sprite grid, so every pose, expression and game keeps working. Pick one of two variants, toggle glasses / blush, and switch looks any time. Needs a Higgsfield API key (Key ID + Secret from [console.higgsfield.ai](https://console.higgsfield.ai), stored encrypted with the OS keychain); each run uploads the photo to Higgsfield and costs two image generations from your API balance.
+
 ### Install
 
 ```bash
@@ -168,6 +188,8 @@ Uninstall the hooks with `npm run uninstall-hook`.
 npm start          # run from source
 npm test           # unit tests (sessions, server, store, sprites)
 npm run sprites    # regenerate docs/sprite-sheet.png from sprites.js
+npm run template   # regenerate assets/skin-template.png (reference sent to Higgsfield)
+node tools/skin-preview.js generated.png out.png   # pixelize a generated image into a pose sheet
 ```
 
 ### Credits

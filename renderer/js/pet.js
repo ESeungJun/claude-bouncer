@@ -88,12 +88,15 @@ window.CB = window.CB || {}
     }
 
     // head (top-center) in window coords, for bubbles and emotes
-    head() { return { x: this.x, y: this.y - this.z - this.ph + Sprites.TOP * this.scale } }
+    // rows of empty headroom above the visible pet (hair fills some with a skin)
+    headroom() { return Sprites.getSkin() ? 1 : Sprites.TOP }
+
+    head() { return { x: this.x, y: this.y - this.z - this.ph + this.headroom() * this.scale } }
 
     contains(px, py) {
       const left = this.x - this.pw / 2
-      const top = this.y - this.z - this.ph
-      return px >= left && px <= left + this.pw && py >= top && py <= top + this.ph
+      const top = this.y - this.z - this.ph + this.headroom() * this.scale
+      return px >= left && px <= left + this.pw && py >= top && py <= this.y - this.z
     }
 
     distTo(x, y) { return Math.hypot(this.x - x, this.y - y) }
