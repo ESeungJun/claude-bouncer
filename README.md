@@ -26,6 +26,7 @@ English · [한국어](README.ko.md)
 - [Features](#features)
 - [Quick start](#quick-start)
 - [Usage](#usage)
+- [claude.ai in the browser](#claudeai-in-the-browser)
 - [Make it look like you](#make-it-look-like-you)
 - [How it works](#how-it-works)
 - [Privacy & security](#privacy--security)
@@ -53,6 +54,7 @@ Claude Bouncer puts a small pixel pet on your desktop. Most of the time it wande
 | **At a glance** | Unread badge on the pet, count in the menu bar, a `•••` bubble while sessions are working |
 | **While you were away** | Come back to "3 notifications while you were away!" |
 | **Sessions panel** | Every open session: working · needs you · done |
+| **claude.ai too** | With the browser extension, web chats on claude.ai notify you when Claude finishes answering |
 | **Do Not Disturb** | Badge only, no sound or movement. Optional system notifications |
 
 <p align="center">
@@ -116,6 +118,18 @@ Output goes to `dist/`. Moving the `.app` is fine — the hook path is refreshed
 
 **Panel tabs:** 🔔 Inbox · 🖥 Sessions · 🐾 Pet (stats, actions, custom look) · ⚙ Settings (size, roaming, sound, system notifications, Do Not Disturb, launch at login, summon hotkey)
 
+## claude.ai in the browser
+
+Chats on claude.ai don't run Claude Code hooks, so a small browser extension (in [`extension/`](extension)) watches claude.ai tabs and tells the app when Claude **starts** and **finishes** answering. The card shows the conversation title, your question and the start of the answer; clicking it brings that exact tab back. If you were already looking at the tab when it finished, no card pops up.
+
+Works in Chrome, Edge, Brave, Arc and other Chromium browsers:
+
+1. ⚙ Settings → **claude.ai 웹 연결** → **설치 방법** (*How to install*) opens the `extension` folder.
+2. Go to `chrome://extensions` (Edge: `edge://extensions`) and turn on **Developer mode**.
+3. **Load unpacked** → pick the `extension` folder, then refresh your claude.ai tabs.
+
+The settings row turns green ("연결됨") once the extension talks to the app. The extension only reads claude.ai pages and only talks to `127.0.0.1`.
+
 ## Make it look like you
 
 <img src="docs/panel-custom-look.png" width="250" align="right" alt="Custom look maker" />
@@ -127,7 +141,7 @@ Output goes to `dist/`. Moving the `.app` is fine — the hook path is refreshed
 
 **Two styles**
 
-- **🎨 Pixel character** (default) — a free-form chibi pixel character that looks like you. Higgsfield draws six poses (idle, blink, two walk frames, happy jump, asleep); the app cuts the sheet, detects the art's native pixel size and animates with those frames.
+- **🎨 Pixel character** (default) — a cute super-deformed chibi (about two heads tall, big eyes and blush) that keeps only your most recognizable traits — hairstyle and hair color, glasses, outfit color — and exaggerates them. Higgsfield draws six poses (idle, blink, two walk frames, happy jump, asleep); the app cuts the sheet, detects the art's native pixel size and animates with those frames.
 - **🟧 Claudy body** — keeps the classic body and paints your hair, skin tone and clothes on it, so every engine-drawn expression still works. Optional glasses and blush.
 
 Each run makes two images (about 3 credits) from your Higgsfield account. Prefer an API key? Choose **API 키로 연결하기** and paste a Key ID + Secret from [console.higgsfield.ai](https://console.higgsfield.ai).
@@ -147,11 +161,18 @@ Claude Code ──hook──▶ send-notify.js ──POST 127.0.0.1:17891──�
 3. The app tracks each session, reads the last prompt and reply from the transcript, and builds the card.
 4. The pet lives on a transparent full-screen overlay that only catches the mouse over the pet, cards and menus; every other click goes straight through to your apps.
 
-**What gets detected:** Claude Code in a terminal and in IDE extensions (VS Code, Cursor, JetBrains) on this machine. Chats on claude.ai and in the Claude desktop app don't run hooks, so they can't send notifications yet. A browser extension for claude.ai is in progress.
+**What gets detected:**
+
+| Where you use Claude | Detected? |
+|---|---|
+| Claude Code in a terminal, VS Code, Cursor, JetBrains (on this machine) | ✅ through hooks |
+| claude.ai in Chrome · Edge · Brave · Arc | ✅ with the [browser extension](#claudeai-in-the-browser) |
+| Claude desktop app chats | ❌ the app has no way to report this yet |
+| Claude Code on the web (cloud sessions) | ❌ runs in the cloud, can't reach this computer |
 
 ## Privacy & security
 
-- The local server listens on `127.0.0.1` only, accepts JSON only, and rejects requests with an `Origin` header, so web pages can't post fake notifications.
+- The local server listens on `127.0.0.1` only, accepts JSON only, and rejects requests from web pages (any `Origin` other than a browser extension), so sites can't post fake notifications.
 - Clicking a card only ever opens real folders, never files or apps named in a notification.
 - Prompts and transcript summaries stay on your machine (`~/Library/Application Support/claude-bouncer` on macOS).
 - Higgsfield sign-in tokens and API keys are encrypted with the OS keychain (Electron `safeStorage`).
@@ -207,6 +228,7 @@ lib/
   higgsfield-mcp.js     Higgsfield over MCP (OAuth) for custom looks
   higgsfield.js         Higgsfield API-key client + prompts
   store.js              JSON persistence
+extension/              claude.ai browser extension (MV3)
 renderer/
   overlay.*, js/        the pet: sprites, behaviour, cards, games, sounds
   js/pixelize.js        generated image → pixel frames

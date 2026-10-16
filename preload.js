@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('api', {
   focusSession: (id) => ipcRenderer.invoke('session:focus', id),
   openFolder: (cwd) => ipcRenderer.invoke('open-folder', cwd),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  extStatus: () => ipcRenderer.invoke('ext:status'),
+  openExtensionFolder: () => ipcRenderer.invoke('ext:open-folder'),
   testNotify: (kind) => ipcRenderer.invoke('test-notify', kind),
   reinstallHook: () => ipcRenderer.invoke('hook:reinstall'),
   pauseHotkey: (paused) => ipcRenderer.invoke('hotkey:pause', !!paused),

@@ -28,6 +28,7 @@
       "main.js",
       "preload.js",
       "lib/**",
+      "extension/**",
       "renderer/**",
       "scripts/**",
       "assets/**",
@@ -36,7 +37,8 @@
       "!**/*.command"
     ],
     "asarUnpack": [
-      "scripts/**"
+      "scripts/**",
+      "extension/**"
     ],
     "directories": {
       "buildResources": "build",

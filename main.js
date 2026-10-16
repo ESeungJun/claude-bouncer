@@ -9,7 +9,7 @@ const { installClaudeHook } = require('./scripts/install-hook')
 const { SessionTracker } = require('./lib/sessions')
 const { JsonStore } = require('./lib/store')
 const { focusTerminal } = require('./lib/focus')
-const { startServer, PORT } = require('./lib/server')
+const { startServer, commandQueue, PORT } = require('./lib/server')
 const { Higgsfield, MODELS, DEFAULT_MODEL, PROMPT } = require('./lib/higgsfield')
 const { HiggsfieldMcp } = require('./lib/higgsfield-mcp')
 
@@ -58,6 +58,10 @@ let tray = null
 let currentDisplayId = null
 let hotkeyOk = false
 let panelPinned = false
+// claude.ai browser extension: last contact + pending "focus tab" commands
+const extCommands = commandQueue()
+const ext = { browser: '', seenAt: 0 }
+const BROWSER_APPS = { 'Google Chrome': 'Google Chrome', 'Microsoft Edge': 'Microsoft Edge', Brave: 'Brave Browser', Opera: 'Opera', Vivaldi: 'Vivaldi', Chromium: 'Chromium', Chrome: 'Google Chrome' }
 
 // Resolve send-notify.js to a real, on-disk file. In a packaged build it sits
 // inside app.asar.unpacked (see asarUnpack in package.json); `node` can't
@@ -70,6 +74,12 @@ function openFolderSafely(p) {
     if (!fs.statSync(p).isDirectory() || /\.app\/?$/i.test(p)) return
   } catch { return }
   shell.openPath(p)
+}
+
+// The unpacked extension folder (inside app.asar.unpacked in a packaged build).
+function extensionFolder() {
+  return path.join(__dirname, 'extension')
+    .replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`)
 }
 
 function sendNotifyPath() {
@@ -268,12 +278,26 @@ function showSystemNotification(n) {
   sys.show()
 }
 
+// claude.ai: ask the extension to bring the tab forward; if it isn't
+// listening, just open the conversation in the browser.
+function focusWebChat(t) {
+  const listening = extCommands.waiting > 0 && Date.now() - ext.seenAt < 60000
+  if (listening && t.tabId != null) {
+    extCommands.push({ type: 'focus', tabId: t.tabId, windowId: t.windowId })
+    const appName = BROWSER_APPS[t.browser]
+    if (IS_MAC && appName) require('child_process').execFile('osascript', ['-e', `tell application "${appName}" to activate`], () => {})
+  } else if (t.url) {
+    shell.openExternal(t.url)
+  }
+}
+
 async function openNotification(id) {
   const n = tracker.find(id)
   if (!n) return
   tracker.markRead(id)
   saveHistory()
   broadcastData()
+  if (n.terminal?.web) return focusWebChat(n.terminal)
   await focusTerminal(n, { openPath: openFolderSafely })
 }
 
@@ -538,6 +562,12 @@ function startFeeds() {
 // ---------- IPC ----------
 
 function registerIpc() {
+  ipcMain.handle('ext:status', () => ({
+    connected: Date.now() - ext.seenAt < 90000,
+    browser: ext.browser,
+    folder: extensionFolder(),
+  }))
+  ipcMain.handle('ext:open-folder', () => openFolderSafely(extensionFolder()))
   ipcMain.handle('state:get', () => ({
     settings: store.data.settings,
     hotkeyOk,
@@ -570,6 +600,7 @@ function registerIpc() {
   ipcMain.handle('history:clear', () => { tracker.clear(); saveHistory(); broadcastData() })
   ipcMain.handle('session:focus', (_, id) => {
     const s = tracker.listSessions().find(x => x.id === id)
+    if (s?.terminal?.web) return focusWebChat(s.terminal)
     if (s) return focusTerminal({ terminal: s.terminal, cwd: s.cwd }, { openPath: openFolderSafely })
   })
 
@@ -694,7 +725,14 @@ app.whenReady().then(() => {
   registerHotkey()
   createTray()
   startFeeds()
-  startServer({ onEvent: onHookEvent })
+  startServer({
+    onEvent: onHookEvent,
+    commands: extCommands,
+    onHello: (d) => {
+      ext.seenAt = Date.now()
+      if (typeof d?.browser === 'string') ext.browser = d.browser.slice(0, 40)
+    },
+  })
 
   screen.on('display-removed', () => {
     const ids = screen.getAllDisplays().map(d => d.id)
