@@ -8,7 +8,7 @@
   const PREVIEW_POSES = [
     {}, { legs: [2, 1, 2, 1] }, { legs: [1, 2, 1, 2] }, {},
     { expr: 'happy', mouth: 'open', armL: 'up', armR: 'up', legs: [1, 1, 1, 1] },
-    { expr: 'blink' }, { expr: 'love', mouth: 'cat' }, { legs: [2, 1, 2, 1] }, { legs: [1, 2, 1, 2] }, { expr: 'sleep', dy: 2 },
+    { expr: 'blink' }, { expr: 'love', mouth: 'cat' }, { walkFrame: 1 }, { walkFrame: 2 }, { walkFrame: 3 }, { walkFrame: 4 }, { expr: 'sleep', dy: 2 },
   ]
 
   let state = await api.skinState()

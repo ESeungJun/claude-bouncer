@@ -191,7 +191,13 @@
 
   // ---------- free-form character: a 3×2 sheet of poses ----------
   // Frame order in the sheet (see the prompt in lib/higgsfield.js).
-  const SHEET_FRAMES = ['idle', 'blink', 'walkA', 'walkB', 'happy', 'sleep']
+  // Sheet layouts, in reading order. 'walk' (current): front poses on top, a
+  // 4-frame side-view walk cycle below. 'classic': the first 3×2 layout.
+  const SHEET_LAYOUTS = {
+    walk: { cols: 4, rows: 2, frames: ['idle', 'blink', 'happy', 'sleep', 'walk1', 'walk2', 'walk3', 'walk4'] },
+    classic: { cols: 3, rows: 2, frames: ['idle', 'blink', 'walkA', 'walkB', 'happy', 'sleep'] },
+  }
+  const SHEET_FRAMES = SHEET_LAYOUTS.classic.frames
   const SHEET_ROWS_FALLBACK = 40 // idle height in pixels when the native pixel size can't be read
   const SHEET_ROWS_MAX = 64
 
@@ -234,12 +240,11 @@
   }
 
   // Group blobs into the 3×2 layout by where their centers fall.
-  function sheetFrames(img, bg) {
+  function sheetFrames(img, bg, cols = 3, rows = 2) {
     const block = Math.max(2, Math.round(Math.min(img.width, img.height) / 160))
     const all = blobs(img, bg, block)
     const biggest = Math.max(1, ...all.map(b => b.n))
     const parts = all.filter(b => b.n >= biggest * 0.04)
-    const cols = 3, rows = 2
     const frames = []
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
@@ -341,9 +346,12 @@
   }
 
   // Generated sheet (3×2 poses) → { type: 'sheet', w, h, frames: { idle: grid, ... } }
-  function pixelizeSheet(img) {
+  // layout: 'walk' | 'classic' | undefined (guess from the image shape:
+  // the 4×2 sheet is generated at 16:9, the 3×2 one at 3:2)
+  function pixelizeSheet(img, layout) {
+    const L = SHEET_LAYOUTS[layout] || (img.width / img.height > 1.65 ? SHEET_LAYOUTS.walk : SHEET_LAYOUTS.classic)
     const bg = backgroundColor(img)
-    const boxes = sheetFrames(img, bg)
+    const boxes = sheetFrames(img, bg, L.cols, L.rows)
     const idleBox = boxes[0] || boxes.find(Boolean)
     if (!idleBox) throw new Error('그림에서 캐릭터를 찾지 못했어요')
     const height = idleBox.y1 - idleBox.y0
@@ -353,7 +361,7 @@
     const w = Math.max(...grids.filter(Boolean).map(g => g[0].length)) + 2
     const h = Math.max(...grids.filter(Boolean).map(g => g.length))
     const frames = {}
-    SHEET_FRAMES.forEach((name, i) => {
+    L.frames.forEach((name, i) => {
       const g = grids[i] || grids[0] || grids.find(Boolean)
       // bottom-aligned, centered on a common canvas so frames don't jitter
       const out = Array.from({ length: h }, () => new Array(w).fill(null))
@@ -365,7 +373,7 @@
     return { v: 2, type: 'sheet', w, h, frames, found: grids.filter(Boolean).length, debug: { cell: Math.round(cell * 10) / 10, bg: hex(bg) } }
   }
 
-  const api = { pixelize, pixelizeSheet, fitSkin, locateGrid, sampleTemplate, backgroundColor, TOP, SHEET_FRAMES }
+  const api = { pixelize, pixelizeSheet, fitSkin, locateGrid, sampleTemplate, backgroundColor, TOP, SHEET_FRAMES, SHEET_LAYOUTS }
   if (typeof module !== 'undefined' && module.exports) module.exports = api
   else { root.CB = root.CB || {}; root.CB.Pixelize = api }
 })(typeof window !== 'undefined' ? window : globalThis)

@@ -547,7 +547,14 @@ window.CB = window.CB || {}
         const l = p.legs
         const walking = l && l[0] !== l[1]
         if (walking) {
-          p.tilt = (p.tilt || 0) + (l[0] === 2 ? 5 : -5)
+          if (Sprites.getSkin().frames.walk1) {
+            // a real side-view walk cycle: play it, faster when running
+            const run = this.act?.name === 'run' || this.act?.name === 'approach' || this.act?.name === 'chase'
+            p.walkFrame = 1 + (Math.floor(this.t / (run ? 0.09 : 0.14)) % 4)
+            delete p.bob
+          } else {
+            p.tilt = (p.tilt || 0) + (l[0] === 2 ? 5 : -5) // no walk frames: waddle
+          }
           delete p.legs
         }
         if (p.lx) this.facing = p.lx
