@@ -1,6 +1,6 @@
 {
   "name": "claude-bouncer",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A tiny pixel Claude that lives on your desktop — plays with you and tells you exactly which Claude Code session needs you.",
   "main": "main.js",
   "author": "ESeungjun",
@@ -65,7 +65,8 @@
       "icon": "build/icon.png",
       "extendInfo": {
         "LSUIElement": true
-      }
+      },
+      "artifactName": "Claude-Bouncer-${version}-mac-${arch}.${ext}"
     },
     "win": {
       "target": [
@@ -76,12 +77,21 @@
           ]
         }
       ],
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "artifactName": "Claude-Bouncer-${version}-win-setup.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ESeungJun",
+        "repo": "claude-bouncer",
+        "releaseType": "draft"
+      }
+    ]
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1"
