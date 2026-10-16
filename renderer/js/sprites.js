@@ -300,17 +300,51 @@ window.CB = window.CB || {}
     return c
   }
 
+  // ---------- free-form characters (6-frame sheets made from a photo) ----------
+
+  const isSheet = (skin) => !!skin && skin.type === 'sheet'
+
+  // Engine pose → one of the six drawn frames.
+  function sheetFrame(o) {
+    if (o.expr === 'sleep') return 'sleep'
+    if (o.expr === 'blink') return 'blink'
+    if ((o.armL === 'up' && o.armR === 'up') || o.expr === 'happy' || o.expr === 'love') return 'happy'
+    const l = o.legs
+    if (l && l[0] === 2 && l[1] === 1) return 'walkA'
+    if (l && l[0] === 1 && l[1] === 2) return 'walkB'
+    return 'idle'
+  }
+
+  // grid size of the pet for a skin
+  function dims(skin = activeSkin) {
+    return isSheet(skin) ? { w: skin.w, h: skin.h } : { w: PET_W, h: PET_H }
+  }
+
+  // Sheets are drawn at their own (finer) pixel size, so they need a smaller
+  // on-screen scale to end up about as big as the classic pet.
+  function pixelScale(scale, skin = activeSkin) {
+    return isSheet(skin) ? (scale >= 4 ? 2 : 1) : scale
+  }
+
   // The active skin (null = classic Claude orange). Panels can pass one explicitly.
   let activeSkin = null
   let skinSeq = 0
   function setSkin(skin) {
     activeSkin = skin && skin.texture ? skin : null
+    if (isSheet(skin)) activeSkin = skin
     if (activeSkin && !activeSkin._id) activeSkin._id = 's' + (++skinSeq)
     cache.clear()
   }
 
   function petCanvas(o, skin = activeSkin) {
     if (skin && !skin._id) skin._id = 's' + (++skinSeq)
+    if (isSheet(skin)) {
+      const frame = sheetFrame(o)
+      const key = skin._id + ':' + frame
+      let c = cache.get(key)
+      if (!c) { c = toCanvas(skin.frames[frame] || skin.frames.idle); cache.set(key, c) }
+      return c
+    }
     const key = (skin ? skin._id + (skin.glasses ? 'g' : '') + (skin.blush === false ? 'n' : '') : '-') + JSON.stringify(o)
     let c = cache.get(key)
     if (!c) {
@@ -347,5 +381,5 @@ window.CB = window.CB || {}
     return c
   }
 
-  CB.Sprites = { PET_W, PET_H, TOP, setSkin, getSkin: () => activeSkin, PAL, composePet, petCanvas, itemCanvas, itemElement, blit, ITEMS }
+  CB.Sprites = { PET_W, PET_H, TOP, setSkin, getSkin: () => activeSkin, isSheet, dims, pixelScale, sheetFrame, PAL, composePet, petCanvas, itemCanvas, itemElement, blit, ITEMS }
 })()

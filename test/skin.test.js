@@ -71,7 +71,7 @@ test('Higgsfield client: upload → submit → poll → download', async () => {
   ])
   const hf = new Higgsfield({ keyId: 'id', secret: 'sec', fetchImpl: fetch, sleep: async () => {} })
   const stages = []
-  const out = await hf.makeCharacter({ photo: Buffer.from('jpg'), photoType: 'image/jpeg', template: Buffer.from('png'), variants: 1, onProgress: s => stages.push(s) })
+  const out = await hf.makeCharacter({ photo: Buffer.from('jpg'), photoType: 'image/jpeg', template: Buffer.from('png'), style: 'claudy', variants: 1, onProgress: s => stages.push(s) })
   assert.strictEqual(out[0].toString(), 'PNGDATA')
   assert.deepStrictEqual(stages, ['upload', 'generate', 'download'])
   const submit = fetch.calls.find(c => c.url.endsWith('/marketing-studio/image'))
@@ -119,7 +119,7 @@ test('Higgsfield MCP: upload → generate_image → jobs_wait → download', asy
     fetchImpl: async (url, opts = {}) => { fetched.push({ url, opts }); return { ok: true, status: 200, arrayBuffer: async () => Buffer.from('IMG') } },
   })
   hf.client = fakeClient
-  const out = await hf.makeCharacter({ photo: Buffer.from('p'), photoType: 'image/jpeg', template: Buffer.from('t'), prompt: 'P', sleep: async () => {} })
+  const out = await hf.makeCharacter({ photo: Buffer.from('p'), photoType: 'image/jpeg', template: Buffer.from('t'), style: 'claudy', sleep: async () => {} })
   assert.deepStrictEqual(out.map(b => b.toString()), ['IMG'])
   assert.strictEqual(await hf.balance(), 5) // structuredContent wins over text
   const gen = calls.find(c => c.name === 'generate_image').a.params
@@ -137,4 +137,47 @@ test('Higgsfield MCP: tool errors surface as messages', async () => {
   hf.client = { callTool: async () => ({ isError: true, content: [{ type: 'text', text: 'Not enough credits' }] }) }
   await assert.rejects(hf.balance(), /Not enough credits/)
   assert.strictEqual(hf.signedIn, false)
+})
+
+test('pixel style sends only the photo and asks for a 3:2 pose sheet', async () => {
+  const os = require('os')
+  const { HiggsfieldMcp } = require('../lib/higgsfield-mcp')
+  const calls = []
+  const reply = (o) => ({ content: [{ type: 'text', text: JSON.stringify(o) }] })
+  const hf = new HiggsfieldMcp({
+    file: path.join(os.tmpdir(), 'cb-mcp-test3.bin'), safeStorage: null, openUrl: () => {},
+    fetchImpl: async () => ({ ok: true, status: 200, arrayBuffer: async () => Buffer.from('IMG') }),
+  })
+  hf.client = { callTool: async ({ name, arguments: a }) => {
+    calls.push({ name, a })
+    if (name === 'media_upload') return reply({ uploads: a.files.map((f, i) => ({ upload_url: 'https://up/' + i, media_id: 'm' + i })) })
+    if (name === 'generate_image') return reply({ results: [{ id: 'j1' }] })
+    if (name === 'jobs_wait') return reply({ all_terminal: true, jobs: [{ status: 'completed', result_url: 'https://cdn/1.png' }] })
+    return reply({})
+  } }
+  await hf.makeCharacter({ photo: Buffer.from('p'), photoType: 'image/jpeg', template: Buffer.from('t'), sleep: async () => {} })
+  assert.strictEqual(calls.find(c => c.name === 'media_upload').a.files.length, 1)
+  const p = calls.find(c => c.name === 'generate_image').a.params
+  assert.strictEqual(p.aspect_ratio, '3:2')
+  assert.match(p.prompt, /3 columns x 2 rows/)
+})
+
+test('pixelizeSheet cuts six aligned frames from a generated sheet', () => {
+  const { pixelizeSheet, SHEET_FRAMES } = require('../renderer/js/pixelize')
+  const skin = pixelizeSheet(decodePng(fs.readFileSync(path.join(__dirname, 'fixtures', 'sheet-redsweater.png'))))
+  assert.strictEqual(skin.type, 'sheet')
+  assert.strictEqual(skin.found, 6)
+  assert.ok(skin.h >= 30 && skin.h <= 64, `height ${skin.h}`)
+  for (const n of SHEET_FRAMES) {
+    const g = skin.frames[n]
+    assert.strictEqual(g.length, skin.h)
+    g.forEach(row => assert.strictEqual(row.length, skin.w))
+    assert.ok(g[skin.h - 1].some(Boolean) || g[skin.h - 2].some(Boolean), `${n} touches the ground`)
+  }
+  // the engine maps poses onto frames
+  const S = loadSprites()
+  assert.strictEqual(S.sheetFrame({ legs: [2, 1, 2, 1] }), 'walkA')
+  assert.strictEqual(S.sheetFrame({ expr: 'sleep', dy: 2 }), 'sleep')
+  assert.strictEqual(S.sheetFrame({ armL: 'up', armR: 'up' }), 'happy')
+  assert.strictEqual(JSON.stringify(S.dims(skin)), JSON.stringify({ w: skin.w, h: skin.h }))
 })

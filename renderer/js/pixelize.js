@@ -189,7 +189,155 @@
     return skin
   }
 
-  const api = { pixelize, fitSkin, locateGrid, sampleTemplate, backgroundColor, TOP }
+  // ---------- free-form character: a 3×2 sheet of poses ----------
+  // Frame order in the sheet (see the prompt in lib/higgsfield.js).
+  const SHEET_FRAMES = ['idle', 'blink', 'walkA', 'walkB', 'happy', 'sleep']
+  const SHEET_ROWS_FALLBACK = 40 // idle height in pixels when the native pixel size can't be read
+  const SHEET_ROWS_MAX = 64
+
+  // Connected blobs of non-background pixels, on a coarse block grid.
+  function blobs(img, bg, block) {
+    const bw = Math.ceil(img.width / block)
+    const bh = Math.ceil(img.height / block)
+    const on = new Uint8Array(bw * bh)
+    for (let by = 0; by < bh; by++) {
+      for (let bx = 0; bx < bw; bx++) {
+        let n = 0, hit = 0
+        for (let y = by * block; y < Math.min(img.height, (by + 1) * block); y += 2) {
+          for (let x = bx * block; x < Math.min(img.width, (bx + 1) * block); x += 2) { n++; if (!isBg(px(img, x, y), bg)) hit++ }
+        }
+        on[by * bw + bx] = hit / n > 0.25 ? 1 : 0
+      }
+    }
+    const seen = new Uint8Array(bw * bh)
+    const out = []
+    for (let i = 0; i < on.length; i++) {
+      if (!on[i] || seen[i]) continue
+      const stack = [i]
+      seen[i] = 1
+      const b = { x0: Infinity, y0: Infinity, x1: -1, y1: -1, n: 0 }
+      while (stack.length) {
+        const j = stack.pop()
+        const x = j % bw, y = (j - x) / bw
+        b.n++
+        b.x0 = Math.min(b.x0, x); b.x1 = Math.max(b.x1, x); b.y0 = Math.min(b.y0, y); b.y1 = Math.max(b.y1, y)
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+          const nx = x + dx, ny = y + dy
+          if (nx < 0 || ny < 0 || nx >= bw || ny >= bh) continue
+          const k = ny * bw + nx
+          if (on[k] && !seen[k]) { seen[k] = 1; stack.push(k) }
+        }
+      }
+      out.push({ x0: b.x0 * block, y0: b.y0 * block, x1: (b.x1 + 1) * block, y1: (b.y1 + 1) * block, n: b.n })
+    }
+    return out
+  }
+
+  // Group blobs into the 3×2 layout by where their centers fall.
+  function sheetFrames(img, bg) {
+    const block = Math.max(2, Math.round(Math.min(img.width, img.height) / 160))
+    const all = blobs(img, bg, block)
+    const biggest = Math.max(1, ...all.map(b => b.n))
+    const parts = all.filter(b => b.n >= biggest * 0.04)
+    const cols = 3, rows = 2
+    const frames = []
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const inCell = parts.filter(b => {
+          const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2
+          return Math.floor(cx / (img.width / cols)) === c && Math.floor(cy / (img.height / rows)) === r
+        })
+        if (!inCell.length) { frames.push(null); continue }
+        frames.push({
+          x0: Math.min(...inCell.map(b => b.x0)), y0: Math.min(...inCell.map(b => b.y0)),
+          x1: Math.max(...inCell.map(b => b.x1)), y1: Math.max(...inCell.map(b => b.y1)),
+        })
+      }
+    }
+    return frames
+  }
+
+  function sampleBox(img, bg, box, cell) {
+    const cols = Math.max(1, Math.round((box.x1 - box.x0) / cell))
+    const rows = Math.max(1, Math.round((box.y1 - box.y0) / cell))
+    const ox = (box.x0 + box.x1) / 2 - (cols * cell) / 2
+    const oy = box.y1 - rows * cell
+    const g = []
+    for (let y = 0; y < rows; y++) {
+      const row = []
+      for (let x = 0; x < cols; x++) {
+        const got = []
+        let bgCount = 0
+        const N = 7
+        for (let i = 0; i < N; i++) {
+          for (let j = 0; j < N; j++) {
+            const X = Math.floor(ox + (x + (j + 0.5) / N) * cell), Y = Math.floor(oy + (y + (i + 0.5) / N) * cell)
+            if (X < 0 || Y < 0 || X >= img.width || Y >= img.height) { bgCount++; continue }
+            const c = px(img, X, Y)
+            if (isBg(c, bg)) bgCount++
+            else got.push(c)
+          }
+        }
+        if (got.length < bgCount * 0.8) { row.push(null); continue }
+        // dark detail (eyes, outline) wins when it covers a good part of the cell,
+        // otherwise take the most common color
+        const dark = got.filter(c => lum(c) < 70)
+        row.push(dark.length >= got.length * 0.3 ? median(dark) : mode(got))
+      }
+      g.push(row)
+    }
+    return g
+  }
+
+  // The generated art is drawn on its own pixel grid (each "pixel" is a few
+  // image pixels). Read that size from color run lengths inside the idle frame:
+  // runs are multiples of it, so pick the largest size that explains them.
+  function nativePixelSize(img, box) {
+    const runs = []
+    const step = Math.max(1, Math.floor((box.y1 - box.y0) / 120))
+    for (let y = box.y0; y < box.y1; y += step) {
+      let run = 1
+      for (let x = box.x0 + 1; x < box.x1; x++) {
+        if (dist(px(img, x, y), px(img, x - 1, y)) < 30) run++
+        else { if (run >= 3 && run < 60) runs.push(run); run = 1 }
+      }
+    }
+    if (runs.length < 20) return 0
+    const score = (p) => runs.reduce((a, r) => a + Math.cos((2 * Math.PI * r) / p), 0) / runs.length
+    let best = 0
+    const scores = []
+    for (let p = 3; p <= 24; p += 0.05) { const sc = score(p); scores.push([p, sc]); best = Math.max(best, sc) }
+    if (best < 0.1) return 0
+    const ok = scores.filter(([, sc]) => sc >= best * 0.9)
+    return ok[ok.length - 1][0]
+  }
+
+  // Generated sheet (3×2 poses) → { type: 'sheet', w, h, frames: { idle: grid, ... } }
+  function pixelizeSheet(img) {
+    const bg = backgroundColor(img)
+    const boxes = sheetFrames(img, bg)
+    const idleBox = boxes[0] || boxes.find(Boolean)
+    if (!idleBox) throw new Error('그림에서 캐릭터를 찾지 못했어요')
+    const height = idleBox.y1 - idleBox.y0
+    let cell = nativePixelSize(img, idleBox)
+    if (!cell || height / cell > SHEET_ROWS_MAX) cell = height / SHEET_ROWS_FALLBACK
+    const grids = boxes.map(b => (b ? flatten(sampleBox(img, bg, b, cell), 22) : null))
+    const w = Math.max(...grids.filter(Boolean).map(g => g[0].length)) + 2
+    const h = Math.max(...grids.filter(Boolean).map(g => g.length))
+    const frames = {}
+    SHEET_FRAMES.forEach((name, i) => {
+      const g = grids[i] || grids[0] || grids.find(Boolean)
+      // bottom-aligned, centered on a common canvas so frames don't jitter
+      const out = Array.from({ length: h }, () => new Array(w).fill(null))
+      const ox = Math.floor((w - g[0].length) / 2)
+      const oy = h - g.length
+      g.forEach((row, y) => row.forEach((c, x) => { if (c) out[oy + y][ox + x] = hex(c) }))
+      frames[name] = out
+    })
+    return { v: 2, type: 'sheet', w, h, frames, found: grids.filter(Boolean).length, debug: { cell: Math.round(cell * 10) / 10, bg: hex(bg) } }
+  }
+
+  const api = { pixelize, pixelizeSheet, fitSkin, locateGrid, sampleTemplate, backgroundColor, TOP, SHEET_FRAMES }
   if (typeof module !== 'undefined' && module.exports) module.exports = api
   else { root.CB = root.CB || {}; root.CB.Pixelize = api }
 })(typeof window !== 'undefined' ? window : globalThis)
