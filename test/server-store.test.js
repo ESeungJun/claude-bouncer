@@ -34,14 +34,54 @@ test('server accepts JSON hook posts and rejects browser-style requests', async 
   }
 })
 
-test('send-notify.js posts to the app and never fails the hook', async () => {
-  const { execFileSync } = require('child_process')
-  const script = path.join(__dirname, '..', 'scripts', 'send-notify.js')
-  // Nothing listening → must still exit 0 quickly.
-  const t0 = Date.now()
-  // point it at a closed port so the test never reaches a running app
-  execFileSync(process.execPath, [script, 'stop'], { input: '{"session_id":"x"}', timeout: 5000, env: { ...process.env, CLAUDE_BOUNCER_PORT: '9' } })
-  assert.ok(Date.now() - t0 < 4000)
+test('send-notify.sh posts the payload with terminal headers and the token', async () => {
+  const { execFile } = require('child_process')
+  const os = require('os')
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-home-'))
+  fs.mkdirSync(path.join(home, '.claude'))
+  fs.writeFileSync(path.join(home, '.claude', 'claude-bouncer.token'), 'abc123token')
+  const events = []
+  const server = startServer({ onEvent: (d) => events.push(d), token: 'abc123token', port: 0 })
+  await new Promise(r => server.once('listening', r))
+  const script = path.join(__dirname, '..', 'scripts', 'send-notify.sh')
+  const run = (kind, port, input) => new Promise((resolve) => {
+    const child = execFile('/bin/sh', [script, kind], {
+      env: { ...process.env, HOME: home, CLAUDE_BOUNCER_PORT: String(port), TERM_PROGRAM: 'iTerm.app', TMUX_PANE: '%3', ORCA_AGENT_PANE: 'tab1:leaf1' },
+      timeout: 5000,
+    }, (err) => resolve(err ? err.code : 0))
+    child.stdin.end(input)
+  })
+  try {
+    assert.strictEqual(await run('submit', server.address().port, '{"session_id":"s1","prompt":"hi"}'), 0)
+    assert.strictEqual(events.length, 1)
+    assert.deepStrictEqual(
+      [events[0].kind, events[0].session_id, events[0].prompt, events[0].term_program, events[0].tmux_pane, events[0].orca_pane],
+      ['submit', 's1', 'hi', 'iTerm.app', '%3', 'tab1:leaf1'])
+    // nothing listening → still exits 0 quickly (never breaks a Claude turn)
+    const t0 = Date.now()
+    assert.strictEqual(await run('stop', 9, '{}'), 0)
+    assert.ok(Date.now() - t0 < 4000)
+  } finally {
+    server.close()
+    fs.rmSync(home, { recursive: true })
+  }
+})
+
+test('hook posts need the token; payloads cannot claim to be from claude.ai', async () => {
+  const events = []
+  const server = startServer({ onEvent: (d) => events.push(d), token: 'tok', port: 0 })
+  await new Promise(r => server.once('listening', r))
+  const { port } = server.address()
+  try {
+    assert.strictEqual(await post(port, '{"kind":"stop"}', { 'Content-Type': 'application/json' }), 401)
+    assert.strictEqual(await post(port, '{"kind":"stop"}', { 'Content-Type': 'application/json', 'X-Claude-Bouncer-Token': 'nope' }), 401)
+    assert.strictEqual(await post(port, '{"kind":"stop","source":"web"}', { 'Content-Type': 'application/json', 'X-Claude-Bouncer-Token': 'tok' }), 204)
+    assert.strictEqual(events[0].source, undefined)
+    // DNS rebinding: a foreign Host header is refused
+    assert.strictEqual(await post(port, '{}', { 'Content-Type': 'application/json', 'X-Claude-Bouncer-Token': 'tok', Host: 'evil.example' }), 403)
+  } finally {
+    server.close()
+  }
 })
 
 test('mergeDefaults keeps saved values of the right type only', () => {
@@ -150,10 +190,14 @@ test('hook installer keeps the user\'s commands in a shared group', () => {
   }
 })
 
-test('installed app runs hooks with its own binary (no Node.js needed)', () => {
+test('hook commands need no Node.js and quote the install path safely', () => {
   const { buildHookCommand, isOurs } = require('../scripts/install-hook')
-  const cmd = buildHookCommand('/Applications/Claude Bouncer.app/Contents/Resources/app.asar.unpacked/scripts/send-notify.js', 'stop', '/Applications/Claude Bouncer.app/Contents/MacOS/Claude Bouncer')
-  assert.strictEqual(cmd, 'ELECTRON_RUN_AS_NODE=1 "/Applications/Claude Bouncer.app/Contents/MacOS/Claude Bouncer" "/Applications/Claude Bouncer.app/Contents/Resources/app.asar.unpacked/scripts/send-notify.js" stop')
-  assert.ok(isOurs(cmd))
-  assert.strictEqual(buildHookCommand('/x/claude-bouncer/scripts/send-notify.js', 'end'), 'node "/x/claude-bouncer/scripts/send-notify.js" end')
+  const mac = buildHookCommand("/Applications/Claude Bouncer.app/Contents/Resources/app.asar.unpacked/scripts/send-notify.sh", 'stop', 'darwin')
+  assert.strictEqual(mac, "/bin/sh '/Applications/Claude Bouncer.app/Contents/Resources/app.asar.unpacked/scripts/send-notify.sh' stop")
+  assert.ok(isOurs(mac))
+  // a quote or $() in the folder name can't break out of the quoting
+  assert.strictEqual(buildHookCommand("/tmp/it's $(x)/claude-bouncer/scripts/send-notify.sh", 'end', 'linux'), "/bin/sh '/tmp/it'\\''s $(x)/claude-bouncer/scripts/send-notify.sh' end")
+  const win = buildHookCommand('C:\\Program Files\\Claude Bouncer\\resources\\app.asar.unpacked\\scripts\\send-notify.ps1', 'notification', 'win32')
+  assert.ok(win.startsWith('powershell -NoProfile -ExecutionPolicy Bypass -File "C:'))
+  assert.ok(isOurs(win))
 })

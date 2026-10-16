@@ -9,48 +9,53 @@ const path = require('path')
 const os = require('os')
 
 const settingsPath = path.join(os.homedir(), '.claude', 'settings.json')
-// Unique substring used to find & remove any previous claude-bouncer hook entry.
-// Matches every variant: source dir (claude-bouncer/scripts/send-notify.js),
-// packaged macOS (Claude Bouncer.app/.../scripts/send-notify.js — note the
-// capitals, which is why we don't key off the app name), packaged Windows.
-const SEND_NOTIFY_TAIL = 'scripts/send-notify.js'
+// Any previous claude-bouncer hook: scripts/send-notify.(js|sh|ps1) inside a
+// claude-bouncer checkout or the packaged app (Claude Bouncer.app, …).
+const SEND_NOTIFY_RE = /scripts\/send-notify\.(js|sh|ps1)/
 
-// runner: the program that executes send-notify.js. Source checkouts use the
-// system `node`; the installed app passes its own executable, run in Node mode
-// (ELECTRON_RUN_AS_NODE), so people without Node.js still get notifications.
-function buildHookCommand(sendNotifyPath, kind, runner) {
-  // Normalize to forward slashes so the same matcher works on Windows too.
-  const p = String(sendNotifyPath).replace(/\\/g, '/')
-  if (runner) return `ELECTRON_RUN_AS_NODE=1 "${String(runner).replace(/\\/g, '/')}" "${p}" ${kind}`
-  return `node "${p}" ${kind}`
+// The hook script for this platform (needs no Node.js):
+//   macOS / Linux → /bin/sh send-notify.sh   (sh + ps + curl)
+//   Windows       → powershell send-notify.ps1
+function hookScriptPath(dir, platform = process.platform) {
+  return path.join(dir, platform === 'win32' ? 'send-notify.ps1' : 'send-notify.sh')
 }
 
-// Ours = a send-notify.js that lives inside a claude-bouncer checkout or the
-// packaged app (or the exact path we're installing now), or the legacy
-// curl/jq hook from pre-0.2. Someone else's scripts/send-notify.js is left alone.
+function buildHookCommand(scriptPath, kind, platform = process.platform) {
+  if (platform === 'win32') {
+    // Windows paths can't contain double quotes, so plain quoting is safe
+    return `powershell -NoProfile -ExecutionPolicy Bypass -File "${String(scriptPath)}" ${kind}`
+  }
+  // single-quote for the shell; a ' in the install path becomes '\''
+  const quoted = "'" + String(scriptPath).replace(/'/g, "'\\''") + "'"
+  return `/bin/sh ${quoted} ${kind}`
+}
+
+// Ours = a send-notify script that lives inside a claude-bouncer checkout or
+// the packaged app (or the exact path we're installing now), or the legacy
+// curl/jq hook from pre-0.2. Someone else's scripts/send-notify.* is left alone.
 function isOurs(cmd, currentPath) {
   if (typeof cmd !== 'string') return false
   const norm = (x) => String(x).replace(/\\/g, '/').replace(/\/{2,}/g, '/')
   const c = norm(cmd)
   if (currentPath && c.includes(norm(currentPath))) return true
   if (c.includes('127.0.0.1:17891/notify')) return true
-  return c.includes(SEND_NOTIFY_TAIL) && /claude[- ]?bouncer/i.test(c)
+  return SEND_NOTIFY_RE.test(c) && /claude[- ]?bouncer/i.test(c)
 }
 
-// Core entry point. Pass the absolute path to send-notify.js for installs;
+// Core entry point. Pass the absolute path to the hook script for installs;
 // it's ignored when uninstall:true. Returns { installed, removed }.
-function installClaudeHook({ sendNotifyPath, runner = null, uninstall = false } = {}) {
+function installClaudeHook({ sendNotifyPath, platform = process.platform, uninstall = false } = {}) {
   if (!uninstall && !sendNotifyPath) {
     throw new Error('installClaudeHook: sendNotifyPath is required for install')
   }
 
   const HOOKS = uninstall ? {} : {
-    Stop: buildHookCommand(sendNotifyPath, 'stop', runner),
-    Notification: buildHookCommand(sendNotifyPath, 'notification', runner),
+    Stop: buildHookCommand(sendNotifyPath, 'stop', platform),
+    Notification: buildHookCommand(sendNotifyPath, 'notification', platform),
     // submit/end let the app track which sessions are busy and clear
     // notifications you've already answered.
-    UserPromptSubmit: buildHookCommand(sendNotifyPath, 'submit', runner),
-    SessionEnd: buildHookCommand(sendNotifyPath, 'end', runner),
+    UserPromptSubmit: buildHookCommand(sendNotifyPath, 'submit', platform),
+    SessionEnd: buildHookCommand(sendNotifyPath, 'end', platform),
   }
 
   let settings = {}
@@ -93,8 +98,11 @@ function installClaudeHook({ sendNotifyPath, runner = null, uninstall = false } 
   const before = fs.existsSync(settingsPath) ? fs.readFileSync(settingsPath, 'utf8') : ''
   const after = JSON.stringify(settings, null, 2) + '\n'
   if (before !== after) {
+    // write-then-rename so a crash can never leave a half-written settings.json
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
-    fs.writeFileSync(settingsPath, after)
+    const tmp = `${settingsPath}.claude-bouncer-${process.pid}.tmp`
+    fs.writeFileSync(tmp, after)
+    fs.renameSync(tmp, settingsPath)
   }
 
   return {
@@ -105,12 +113,12 @@ function installClaudeHook({ sendNotifyPath, runner = null, uninstall = false } 
   }
 }
 
-module.exports = { installClaudeHook, isOurs, buildHookCommand }
+module.exports = { installClaudeHook, isOurs, buildHookCommand, hookScriptPath }
 
 // --- CLI ---
 if (require.main === module) {
   const uninstall = process.argv.includes('--uninstall')
-  const sendNotifyPath = path.resolve(__dirname, 'send-notify.js')
+  const sendNotifyPath = hookScriptPath(__dirname)
   try {
     const result = installClaudeHook({ sendNotifyPath, uninstall })
     if (uninstall) {

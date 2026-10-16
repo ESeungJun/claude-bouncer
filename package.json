@@ -18,7 +18,7 @@
     "template": "node tools/sprite-sheet.js --template assets/skin-template.png"
   },
   "devDependencies": {
-    "electron": "^32.2.0",
+    "electron": "^44.7.0",
     "electron-builder": "^26.8.1"
   },
   "build": {
@@ -91,7 +91,14 @@
         "repo": "claude-bouncer",
         "releaseType": "draft"
       }
-    ]
+    ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableCookieEncryption": true,
+      "onlyLoadAppFromAsar": true
+    }
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1"
