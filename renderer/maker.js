@@ -17,6 +17,9 @@
   let variants = [] // { skin, src } | { error, src }
   let chosen = -1
   let frame = 0
+  let showKeyForm = false
+  let cost = null
+  const connected = () => state.mcp || state.hasKey
 
   function el(tag, cls, text) {
     const e = document.createElement(tag)
@@ -50,10 +53,15 @@
       window.CBPanel?.onSkinChanged()
     }
     $('#mk-saved').replaceChildren(chip('', '기본', null), ...state.list.map(s => chip(s.id, s.name, s.skin)))
-    $('#mk-key').style.display = state.hasKey ? 'none' : 'flex'
-    $('#mk-keyinfo').textContent = state.hasKey ? `Higgsfield 키 ${state.keyId}` : 'Higgsfield API 키가 필요해요'
-    $('#mk-key-edit').style.display = state.hasKey ? '' : 'none'
-    $('#mk-go').disabled = !state.hasKey || !photoPath || busy
+    $('#mk-connect').style.display = connected() ? 'none' : 'flex'
+    $('#mk-key').style.display = showKeyForm ? 'flex' : 'none'
+    $('#mk-keyinfo').textContent = state.mcp
+      ? `🟢 Higgsfield 연결됨${state.credits != null ? ` · 크레딧 ${state.credits.toLocaleString()}` : ''}`
+      : state.hasKey ? `🔑 API 키 ${state.keyId}` : '먼저 Higgsfield를 연결해 주세요'
+    $('#mk-key-edit').style.display = state.hasKey && !state.mcp ? '' : 'none'
+    $('#hf-logout').style.display = state.mcp ? '' : 'none'
+    $('#mk-go').disabled = !connected() || !photoPath || busy
+    $('#mk-go').textContent = cost ? `닮은 클로디 만들기 (약 ${cost} 크레딧)` : '닮은 클로디 만들기'
   }
 
   // ---------- API key ----------
@@ -61,11 +69,34 @@
   $('#hf-save').addEventListener('click', async () => {
     state = await api.setHiggsfieldKey($('#hf-id').value, $('#hf-secret').value)
     $('#hf-secret').value = ''
+    showKeyForm = !state.hasKey
     render()
   })
+  $('#hf-use-key').addEventListener('click', () => { showKeyForm = !showKeyForm; render() })
+  $('#hf-login').addEventListener('click', async () => {
+    const b = $('#hf-login')
+    b.disabled = true
+    b.textContent = '브라우저에서 로그인해 주세요…'
+    pin()
+    const r = await api.higgsfieldLogin()
+    b.disabled = false
+    b.textContent = '🔗 Higgsfield 계정으로 연결'
+    state = r
+    if (r.error) progress(r.error, true)
+    else { progress(''); loadCost() }
+    render()
+  })
+  $('#hf-logout').addEventListener('click', async () => { state = await api.higgsfieldLogout(); cost = null; render() })
+
+  async function loadCost() {
+    if (!state.mcp) return
+    cost = await api.estimateSkin()
+    render()
+  }
   $('#hf-console').addEventListener('click', () => api.openExternal('https://console.higgsfield.ai'))
   $('#mk-key-edit').addEventListener('click', () => {
-    $('#mk-key').style.display = 'flex'
+    showKeyForm = true
+    render()
     $('#hf-id').focus()
   })
 
@@ -212,5 +243,6 @@
 
   api.onSkins((s) => { state = s; render() })
   render()
+  if (state.mcp) api.refreshSkinState().then((s) => { state = s; render(); loadCost() })
   window.CBMaker = { setPhoto } // handy for scripted checks
 })()

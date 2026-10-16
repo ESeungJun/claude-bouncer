@@ -60,11 +60,12 @@
 
 생성된 그림을 그대로 쓰지 않고 앱이 **스프라이트 격자(18×16)에 다시 맞춰 찍기 때문에**, 걷기·표정·게임 같은 모든 동작이 그대로 돼요.
 
-1. [console.higgsfield.ai](https://console.higgsfield.ai)에서 API 키(Key ID + Secret)를 발급하고 잔액을 충전해요 (웹 구독과 별도인 API 잔액)
-2. 패널 → 🐾 펫 → 키 저장 (OS 키체인으로 암호화해서 저장)
-3. 사진을 끌어다 놓거나 골라서 **닮은 클로디 만들기**
+1. 패널 → 🐾 펫 → **🔗 Higgsfield 계정으로 연결** → 브라우저에서 로그인·허용 (Claude Code의 Higgsfield 커넥터와 같은 MCP OAuth 연결이에요. 로그인 정보는 OS 키체인으로 암호화해서 저장)
+2. 사진을 끌어다 놓거나 골라서 **닮은 클로디 만들기** (30초~1분)
+3. 마음에 드는 버전을 골라 **이걸로 할래**
 
-사진은 생성을 위해 Higgsfield 서버로 보내져요. 한 번 만들 때 이미지 2장 분량이 API 잔액에서 차감돼요. 모델은 기본 `marketing-studio/image`이고 설정 파일에서 `xai/grok-imagine-image-2.0` 또는 `alibaba/qwen-image-3/edit`로 바꿀 수 있어요.
+내 Higgsfield 크레딧으로 만들어요 — 한 번에 이미지 2장, 약 3크레딧 (GPT Image 2.5). 사진은 생성을 위해 Higgsfield 서버로 보내져요.
+API 키가 더 편하면 "API 키로 연결하기"로 [console.higgsfield.ai](https://console.higgsfield.ai)의 Key ID + Secret을 넣어도 돼요 (API 잔액에서 차감, 기본 모델 `marketing-studio/image`).
 
 <p align="center"><img src="docs/custom-look-poses.png" width="520" alt="custom look in every pose" /></p>
 
@@ -162,7 +163,7 @@ Clawd's little cousin lives on your desktop. Most of the time it wanders around,
 
 ### Make it look like you
 
-Drop a photo into the Pet tab and [Higgsfield](https://higgsfield.ai) repaints Claudy with your hair, skin tone and clothes. The app snaps the result back onto the sprite grid, so every pose, expression and game keeps working. Pick one of two variants, toggle glasses / blush, and switch looks any time. Needs a Higgsfield API key (Key ID + Secret from [console.higgsfield.ai](https://console.higgsfield.ai), stored encrypted with the OS keychain); each run uploads the photo to Higgsfield and costs two image generations from your API balance.
+Drop a photo into the Pet tab and [Higgsfield](https://higgsfield.ai) repaints Claudy with your hair, skin tone and clothes. The app snaps the result back onto the sprite grid, so every pose, expression and game keeps working. Pick one of two variants, toggle glasses / blush, and switch looks any time. Connect with **your Higgsfield account** (MCP OAuth in the browser, the same connector Claude Code uses — tokens are encrypted with the OS keychain) and it spends your account credits (about 3 per run, two images). Alternatively paste an API key from [console.higgsfield.ai](https://console.higgsfield.ai). Each run uploads the photo to Higgsfield.
 
 ### Install
 
