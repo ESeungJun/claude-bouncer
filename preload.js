@@ -1,23 +1,50 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
+function on(channel) {
+  return (cb) => {
+    const listener = (_, data) => cb(data)
+    ipcRenderer.on(channel, listener)
+    return () => ipcRenderer.removeListener(channel, listener)
+  }
+}
+
 contextBridge.exposeInMainWorld('api', {
-  onNotify: (cb) => {
-    const listener = (_, data) => cb(data)
-    ipcRenderer.on('claude-notify', listener)
-    return () => ipcRenderer.removeListener('claude-notify', listener)
-  },
-  onHistoryUpdate: (cb) => {
-    const listener = (_, data) => cb(data)
-    ipcRenderer.on('history-update', listener)
-    return () => ipcRenderer.removeListener('history-update', listener)
-  },
-  getHistory: () => ipcRenderer.invoke('get-history'),
-  clearHistory: () => ipcRenderer.invoke('clear-history'),
+  // events from main
+  onNotify: on('notify'),
+  onData: on('data'),
+  onSettings: on('settings'),
+  onCursor: on('cursor'),
+  onIdle: on('idle'),
+  onDisplay: on('display'),
+  onAction: on('action'),
+  onSessionBusy: on('session-busy'),
+  onPet: on('pet'),
+  onPanelTab: on('panel-tab'),
+
+  // state
+  getState: () => ipcRenderer.invoke('state:get'),
+  savePet: (pet) => ipcRenderer.invoke('pet:save', pet),
+  setSetting: (key, value) => ipcRenderer.invoke('settings:set', key, value),
+
+  // overlay plumbing
+  setIgnoreMouse: (ignore) => ipcRenderer.send('mouse:ignore', !!ignore),
+  showPetMenu: () => ipcRenderer.send('menu:pet'),
+  followDisplay: () => ipcRenderer.invoke('display:follow'),
+  petAction: (a) => ipcRenderer.invoke('pet:action', a),
+
+  // notifications / sessions
+  openNotification: (id) => ipcRenderer.invoke('notif:open', id),
+  dismissNotification: (id) => ipcRenderer.invoke('notif:dismiss', id),
+  readAll: () => ipcRenderer.invoke('notif:readAll'),
+  getHistory: () => ipcRenderer.invoke('history:get'),
+  clearHistory: () => ipcRenderer.invoke('history:clear'),
+  focusSession: (id) => ipcRenderer.invoke('session:focus', id),
   openFolder: (cwd) => ipcRenderer.invoke('open-folder', cwd),
-  focusTerminal: (entry) => ipcRenderer.invoke('focus-terminal', entry),
-  togglePanel: () => ipcRenderer.invoke('toggle-panel'),
-  closePanel: () => ipcRenderer.invoke('close-panel'),
-  startDrag: (o) => ipcRenderer.invoke('start-drag', o),
-  stopDrag: () => ipcRenderer.invoke('stop-drag'),
-  setIgnoreMouse: (ignore) => ipcRenderer.invoke('set-ignore-mouse', ignore),
+  testNotify: (kind) => ipcRenderer.invoke('test-notify', kind),
+  reinstallHook: () => ipcRenderer.invoke('hook:reinstall'),
+  pauseHotkey: (paused) => ipcRenderer.invoke('hotkey:pause', !!paused),
+
+  // panel
+  togglePanel: (tab) => ipcRenderer.invoke('panel:toggle', tab),
+  closePanel: () => ipcRenderer.invoke('panel:close'),
 })

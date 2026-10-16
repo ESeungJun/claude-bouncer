@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:" />
+  <link rel="stylesheet" href="common.css" />
+  <link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+  <header class="top">
+    <canvas id="logo" class="px"></canvas>
+    <div class="t-text">
+      <div class="t-name">Claude Bouncer</div>
+      <div class="t-sub" id="status">127.0.0.1:17891 대기 중</div>
+    </div>
+    <button id="close" class="icon" title="닫기">×</button>
+  </header>
+
+  <nav class="tabs">
+    <button data-tab="inbox" class="on">🔔 알림 <span id="cnt-inbox" class="cnt"></span></button>
+    <button data-tab="sessions">🖥 세션 <span id="cnt-sessions" class="cnt"></span></button>
+    <button data-tab="pet">🐾 펫</button>
+    <button data-tab="settings">⚙ 설정</button>
+  </nav>
+
+  <main>
+    <section id="tab-inbox" class="tab on">
+      <div class="bar">
+        <label class="filter"><input type="checkbox" id="only-pending" /> 확인 안 한 것만</label>
+        <button id="read-all" class="link">모두 읽음</button>
+        <button id="clear" class="link danger">비우기</button>
+      </div>
+      <div id="inbox" class="list"></div>
+    </section>
+
+    <section id="tab-sessions" class="tab">
+      <p class="hint">지금 열려 있는 Claude Code 세션이에요. 클릭하면 그 터미널로 이동해요.</p>
+      <div id="sessions" class="list"></div>
+    </section>
+
+    <section id="tab-pet" class="tab">
+      <div class="pet-card">
+        <canvas id="pet-face" class="px"></canvas>
+        <div>
+          <div class="pet-name" id="pet-name">클로디</div>
+          <div class="pet-level" id="pet-level">Lv.1</div>
+          <div class="xp"><div id="xp-fill"></div></div>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><span>🍪 배부름</span><div class="meter"><div id="m-hunger"></div></div></div>
+        <div class="stat"><span>🎈 재미</span><div class="meter"><div id="m-fun"></div></div></div>
+        <div class="stat"><span>⚡ 기운</span><div class="meter"><div id="m-energy"></div></div></div>
+      </div>
+      <div class="actions">
+        <button data-act="feed">🍪 밥 주기</button>
+        <button data-act="ball">⚽ 공놀이</button>
+        <button data-act="game:catch">🎮 쿠키 받기</button>
+        <button data-act="game:tag">🏃 술래잡기</button>
+        <button data-act="summon">📣 부르기</button>
+        <button data-act="sleep">💤 재우기</button>
+      </div>
+      <div class="records" id="records"></div>
+      <p class="hint">펫을 쓰다듬기(위에서 마우스 좌우로 문지르기) · 클릭 · 드래그해서 던지기 · 더블클릭 메뉴 · 우클릭 메뉴 · <span id="hint-hotkey">⌥⇧C</span> 어디서든 부르기</p>
+    </section>
+
+    <section id="tab-settings" class="tab">
+      <div class="set">
+        <div class="set-label">펫 크기</div>
+        <div class="seg" id="scale">
+          <button data-v="2">작게</button><button data-v="3">보통</button><button data-v="4">크게</button>
+        </div>
+      </div>
+      <div class="set">
+        <div>
+          <div class="set-label">부르기 단축키</div>
+          <div class="set-sub" id="hotkey-status">어디서든 누르면 클로디가 커서 앞으로 와요</div>
+        </div>
+        <div class="seg">
+          <button id="hotkey" class="key">⌥⇧C</button>
+          <button id="hotkey-off" title="단축키 끄기">끄기</button>
+        </div>
+      </div>
+      <label class="set"><span class="set-label">자유롭게 돌아다니기</span><input type="checkbox" data-set="roam" /></label>
+      <label class="set"><span class="set-label">효과음</span><input type="checkbox" data-set="sound" /></label>
+      <label class="set"><span class="set-label">시스템 알림도 같이 보내기</span><input type="checkbox" data-set="systemNotify" /></label>
+      <label class="set"><span class="set-label">방해 금지 (조용히 배지로만)</span><input type="checkbox" data-set="dnd" /></label>
+      <label class="set"><span class="set-label">로그인 시 자동 실행</span><input type="checkbox" data-set="launchAtLogin" /></label>
+      <div class="set">
+        <div class="set-label">테스트 알림</div>
+        <div class="seg">
+          <button id="test-done">완료</button><button id="test-need">권한 요청</button>
+        </div>
+      </div>
+      <div class="set">
+        <div class="set-label">Claude Code 훅</div>
+        <div class="seg"><button id="reinstall">다시 설치</button></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/sprites.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>
