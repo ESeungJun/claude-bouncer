@@ -134,8 +134,13 @@ test('readTranscriptTail finds the last real prompt and assistant text', () => {
     { type: 'assistant', message: { content: [{ type: 'text', text: '다 했어요!' }] } },
   ]
   fs.writeFileSync(file, 'garbage-partial-line\n' + rows.map(r => JSON.stringify(r)).join('\n') + '\n')
-  assert.deepStrictEqual(readTranscriptTail(file), { summary: '다 했어요!', prompt: '두 번째 질문 여러 줄' })
-  assert.deepStrictEqual(readTranscriptTail(path.join(dir, 'missing.jsonl')), {})
+  const root = dir + path.sep
+  assert.deepStrictEqual(readTranscriptTail(file, root), { summary: '다 했어요!', prompt: '두 번째 질문 여러 줄' })
+  assert.deepStrictEqual(readTranscriptTail(path.join(dir, 'missing.jsonl'), root), {})
+  // outside ~/.claude, or not a regular file (e.g. a FIFO that would block) → ignored
+  assert.deepStrictEqual(readTranscriptTail(file, path.join(os.tmpdir(), 'elsewhere') + path.sep), {})
+  require('child_process').execFileSync('mkfifo', [path.join(dir, 'fifo')])
+  assert.deepStrictEqual(readTranscriptTail(path.join(dir, 'fifo'), root), {})
   fs.rmSync(dir, { recursive: true })
 })
 

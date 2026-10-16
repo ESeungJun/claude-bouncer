@@ -12,6 +12,7 @@
   ]
 
   let state = await api.skinState()
+  const presetSkins = await api.skinPresets() // id → skin, fetched once
   let photoPath = ''
   let busy = false
   let variants = [] // { skin, src } | { error, src }
@@ -64,14 +65,15 @@
   }
 
   function render() {
-    const active = state.list.find(s => s.id === state.active)
-    if ((active?.skin || null) !== Sprites.getSkin()) {
-      Sprites.setSkin(active?.skin || null)
+    // the active look may be a saved one or a built-in preset
+    const activeSkin = presetSkins[state.active] || state.list.find(s => s.id === state.active)?.skin || null
+    if (activeSkin !== Sprites.getSkin()) {
+      Sprites.setSkin(activeSkin)
       window.CBPanel?.onSkinChanged()
     }
     $('#mk-saved').replaceChildren(
       chip('', '클로디', null),
-      ...(state.presets || []).map(p => chip(p.id, p.name, p.skin, { preset: true })),
+      ...(state.presets || []).map(p => chip(p.id, p.name, presetSkins[p.id], { preset: true })),
       ...state.list.map(s => chip(s.id, s.name, s.skin)),
     )
     // the request box is for people without Higgsfield
@@ -136,6 +138,7 @@
     $('#mk-drop-text').textContent = '다른 사진으로 바꾸려면 다시 눌러요'
     progress('')
     render()
+    syncReqPhoto()
   }
 
   function clearPhoto() {
@@ -144,6 +147,11 @@
     $('#mk-photo').classList.remove('on')
     $('#mk-drop-text').textContent = '📷 사진을 끌어다 놓거나 눌러서 고르기'
     render()
+    syncReqPhoto()
+  }
+
+  function syncReqPhoto() {
+    $('#req-photo-name').textContent = photoPath ? `📎 ${photoPath.split(/[\\/]/).pop()} 이 함께 가요` : '아래 📷 칸에서 고른 사진이 함께 가요'
   }
 
   function discardResults() {
@@ -309,7 +317,7 @@
   })
   $('#req-send').addEventListener('click', async () => {
     const b = $('#req-send')
-    if (!photoPath) { progress('먼저 위에서 사진을 골라 주세요', true); return }
+    if (!photoPath) { reqStatus('아래 📷 칸에서 사진을 먼저 골라 주세요', true); return }
     b.disabled = true
     b.textContent = '보내는 중…'
     const r = await api.sendRequest({
@@ -320,14 +328,18 @@
     })
     b.disabled = false
     b.textContent = '요청 보내기'
-    if (r.error) { progress(r.error, true); return }
+    if (r.error) { reqStatus(r.error, true); return }
+    reqStatus('')
     progress('요청을 보냈어요! 만들어지면 메일로 보내드릴게요 💌')
     $('#req-message').value = ''
     $('#req-consent').checked = false
     $('#req-form').classList.remove('on')
   })
-  const syncReqPhoto = () => { $('#req-photo-name').textContent = photoPath ? `📎 ${photoPath.split(/[\\/]/).pop()}` : '위에서 사진을 먼저 골라 주세요' }
-  setInterval(syncReqPhoto, 1000)
+  function reqStatus(text, error = false) {
+    const el = $('#req-status')
+    el.textContent = text
+    el.classList.toggle('err', error)
+  }
 
   window.CBMaker = { setPhoto, showResults } // handy for scripted checks
 })()
