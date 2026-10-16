@@ -9,4 +9,5 @@ const { pixelizeSheet, SHEET_FRAMES } = require('../renderer/js/pixelize')
 const [,, input, out] = process.argv
 const skin = pixelizeSheet(decodePng(fs.readFileSync(input)))
 console.log(JSON.stringify({ w: skin.w, h: skin.h, found: skin.found, ...skin.debug }))
-fs.writeFileSync(out, render(SHEET_FRAMES.map(n => skin.frames[n]), { scale: 3, cols: 6, pad: 2, bg: '#f3efe9' }))
+const names = Object.keys(skin.frames)
+fs.writeFileSync(out, render(names.map(n => skin.frames[n]), { scale: 3, cols: names.length, pad: 2, bg: '#f3efe9' }))
