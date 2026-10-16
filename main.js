@@ -452,7 +452,10 @@ async function generateSkin(file, style) {
 // No Higgsfield account? People can send a photo and a note; FormSubmit
 // forwards it (with the photo attached) to the maintainer's inbox.
 
-const REQUEST_TO = 'https://formsubmit.co/6951004@gmail.com'
+// JSON endpoint; FormSubmit only accepts posts that name a web page as their
+// source (Referer/Origin), otherwise it answers 200 with an error page.
+const REQUEST_TO = 'https://formsubmit.co/ajax/6951004@gmail.com'
+const REQUEST_FROM = 'https://github.com/ESeungJun/claude-bouncer'
 let lastRequestAt = 0
 
 async function sendRequest({ email, message, photo, consent }) {
@@ -472,17 +475,21 @@ async function sendRequest({ email, message, photo, consent }) {
   form.append('message', message || '(메시지 없음)')
   form.append('app', `claude-bouncer ${app.getVersion()} · ${process.platform}`)
   form.append('attachment', new Blob([jpeg], { type: 'image/jpeg' }), 'photo.jpg')
-  const res = await fetch(REQUEST_TO, { method: 'POST', body: form, headers: { Accept: 'application/json' } })
+  const res = await fetch(REQUEST_TO, {
+    method: 'POST',
+    body: form,
+    headers: { Accept: 'application/json', Referer: REQUEST_FROM, Origin: 'https://github.com' },
+  })
   if (!res.ok) throw new Error(`보내지 못했어요 (${res.status}). 잠시 후 다시 시도해 주세요`)
-  // FormSubmit answers 200 even when it didn't forward anything (form not
-  // activated yet, rejected, …), so read what it said
-  const text = await res.text().catch(() => '')
+  // FormSubmit answers 200 even when nothing was forwarded (not activated,
+  // rejected, …): only {"success":"true"} means it reached the inbox
   let reply = null
-  try { reply = JSON.parse(text) } catch {}
-  const failed = reply ? String(reply.success) === 'false' : /activat|captcha|error/i.test(text)
-  if (failed) {
-    console.error('[claude-bouncer] request not delivered:', (reply?.message || text).slice(0, 200))
-    throw new Error('요청 창구가 아직 준비 중이라 전달되지 않았어요. 잠시 후 다시 시도해 주세요')
+  try { reply = await res.json() } catch {}
+  if (String(reply?.success) !== 'true') {
+    console.error('[claude-bouncer] request not delivered:', String(reply?.message || 'no JSON reply').slice(0, 200))
+    throw new Error(/activat/i.test(reply?.message || '')
+      ? '요청 창구가 아직 준비 중이에요. 잠시 후 다시 시도해 주세요'
+      : '요청을 전달하지 못했어요. 잠시 후 다시 시도해 주세요')
   }
   lastRequestAt = Date.now()
   return true
