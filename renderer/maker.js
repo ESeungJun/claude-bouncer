@@ -86,6 +86,7 @@
     $('#mk-key-edit').style.display = state.hasKey && !state.mcp ? '' : 'none'
     $('#hf-logout').style.display = state.mcp ? '' : 'none'
     $('#mk-go').disabled = !connected() || !photoPath || busy
+    $('#mk-ask').disabled = !photoPath
     const what = style === 'claudy' ? '클로디' : '캐릭터'
     $('#mk-go').textContent = cost ? `닮은 ${what} 만들기 (약 ${cost} 크레딧)` : `닮은 ${what} 만들기`
   }
@@ -151,7 +152,7 @@
   }
 
   function syncReqPhoto() {
-    $('#req-photo-name').textContent = photoPath ? `📎 ${photoPath.split(/[\\/]/).pop()} 이 함께 가요` : '아래 📷 칸에서 고른 사진이 함께 가요'
+    $('#req-photo-name').textContent = photoPath ? `📎 ${photoPath.split(/[\\/]/).pop()}` : ''
   }
 
   function discardResults() {
@@ -309,32 +310,47 @@
   api.onSkins((s) => { state = s; render() })
   render()
   if (state.mcp) api.refreshSkinState().then((s) => { state = s; render(); loadCost() })
-  // ---------- "make one for me" request ----------
+  // ---------- "make one for me" request (compose window) ----------
 
-  $('#req-open').addEventListener('click', () => {
-    $('#req-form').classList.toggle('on')
+  function openCompose() {
+    if (!photoPath) return
+    $('#cp-photo').src = $('#mk-photo').src
+    syncReqPhoto()
+    reqStatus('')
+    $('#compose').classList.add('on')
+    api.pinPanel(true)
+    setTimeout(() => $('#req-email').focus(), 50)
+  }
+  function closeCompose() {
+    $('#compose').classList.remove('on')
     pin()
-  })
+  }
+  $('#mk-ask').addEventListener('click', openCompose)
+  $('#cp-close').addEventListener('click', closeCompose)
+  $('#compose').addEventListener('click', (e) => { if (e.target.id === 'compose') closeCompose() })
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('#compose').classList.contains('on')) closeCompose() })
+
   $('#req-send').addEventListener('click', async () => {
     const b = $('#req-send')
-    if (!photoPath) { reqStatus('아래 📷 칸에서 사진을 먼저 골라 주세요', true); return }
+    if (!photoPath) { reqStatus('사진을 먼저 골라 주세요', true); return }
     b.disabled = true
     b.textContent = '보내는 중…'
     const r = await api.sendRequest({
       email: $('#req-email').value,
+      subject: $('#req-subject').value,
       message: $('#req-message').value,
       photo: photoPath,
       consent: $('#req-consent').checked,
     })
     b.disabled = false
-    b.textContent = '요청 보내기'
+    b.textContent = '보내기'
     if (r.error) { reqStatus(r.error, true); return }
-    reqStatus('')
-    progress('요청을 보냈어요! 만들어지면 메일로 보내드릴게요 💌')
+    closeCompose()
     $('#req-message').value = ''
     $('#req-consent').checked = false
-    $('#req-form').classList.remove('on')
+    progress('요청을 보냈어요! 만들어지면 메일로 보내드릴게요 💌')
   })
+
   function reqStatus(text, error = false) {
     const el = $('#req-status')
     el.textContent = text
