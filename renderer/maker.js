@@ -45,8 +45,19 @@
     c.addEventListener('click', async () => { state = await api.useSkin(id); render() })
     if (id) {
       const del = el('button', 'del', '×')
-      del.title = '지우기'
-      del.addEventListener('click', async (e) => { e.stopPropagation(); state = await api.deleteSkin(id); render() })
+      del.title = '이 모습 지우기'
+      del.addEventListener('click', async (e) => {
+        e.stopPropagation()
+        // first click asks, second click deletes
+        if (!del.classList.contains('confirm')) {
+          del.classList.add('confirm')
+          del.textContent = '지우기'
+          setTimeout(() => { del.classList.remove('confirm'); del.textContent = '×' }, 2500)
+          return
+        }
+        state = await api.deleteSkin(id)
+        render()
+      })
       c.appendChild(del)
     }
     return c
@@ -121,6 +132,27 @@
     render()
   }
 
+  function clearPhoto() {
+    photoPath = ''
+    $('#mk-photo').removeAttribute('src')
+    $('#mk-photo').classList.remove('on')
+    $('#mk-drop-text').textContent = '📷 사진을 끌어다 놓거나 눌러서 고르기'
+    render()
+  }
+
+  function discardResults() {
+    variants = []
+    chosen = -1
+    previewSkins.clear()
+    progress('')
+    renderVariants()
+    render()
+    pin()
+  }
+
+  $('#mk-photo-clear').addEventListener('click', (e) => { e.stopPropagation(); if (!busy) clearPhoto() })
+  $('#mk-discard').addEventListener('click', discardResults)
+
   const drop = $('#mk-drop')
   drop.addEventListener('click', async () => setPhoto(await api.pickPhoto()))
   drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over') })
@@ -169,15 +201,22 @@
     busy = true
     variants = []
     chosen = -1
+    previewSkins.clear()
     renderVariants()
     pin()
     render()
     progress(STAGES.upload)
     const r = await api.generateSkin(photoPath, style)
-    const madeAs = style
     busy = false
     if (r.error) { progress(r.error, true); render(); pin(); return }
-    for (const src of r.images) {
+    await showResults(r.images, style)
+  })
+
+  // generated images (data URLs) → pixel skins → previews
+  async function showResults(images, madeAs) {
+    variants = []
+    previewSkins.clear()
+    for (const src of images) {
       try {
         const img = await decode(src)
         variants.push({ skin: madeAs === 'claudy' ? Pixelize.pixelize(img) : Pixelize.pixelizeSheet(img), src })
@@ -188,7 +227,7 @@
     renderVariants()
     render()
     pin()
-  })
+  }
 
   function currentSkin() {
     const v = variants[chosen]
@@ -248,19 +287,13 @@
     delete skin._id
     delete skin.debug
     state = await api.saveSkin(skin, `내 클로디 ${state.list.length + 1}`)
-    variants = []
-    chosen = -1
-    photoPath = ''
-    $('#mk-photo').classList.remove('on')
-    $('#mk-drop-text').textContent = '📷 사진을 끌어다 놓거나 눌러서 고르기'
+    discardResults()
+    clearPhoto()
     progress('적용했어요! 화면의 클로디를 보세요 ✨')
-    renderVariants()
-    render()
-    pin()
   })
 
   api.onSkins((s) => { state = s; render() })
   render()
   if (state.mcp) api.refreshSkinState().then((s) => { state = s; render(); loadCost() })
-  window.CBMaker = { setPhoto } // handy for scripted checks
+  window.CBMaker = { setPhoto, showResults } // handy for scripted checks
 })()
