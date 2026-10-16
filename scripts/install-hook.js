@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Idempotently install (or remove) the Stop / Notification hooks that POST
+// Idempotently install (or remove) the Stop / Notification / UserPromptSubmit /
+// SessionEnd hooks that POST
 // to claude-bouncer. Importable from the Electron main process AND runnable
 // as a CLI (`npm run install-hook`, `npm run uninstall-hook`) for source-mode.
 
@@ -37,6 +38,10 @@ function installClaudeHook({ sendNotifyPath, uninstall = false } = {}) {
   const HOOKS = uninstall ? {} : {
     Stop: buildHookCommand(sendNotifyPath, 'stop'),
     Notification: buildHookCommand(sendNotifyPath, 'notification'),
+    // submit/end let the app track which sessions are busy and clear
+    // notifications you've already answered.
+    UserPromptSubmit: buildHookCommand(sendNotifyPath, 'submit'),
+    SessionEnd: buildHookCommand(sendNotifyPath, 'end'),
   }
 
   let settings = {}
@@ -60,7 +65,7 @@ function installClaudeHook({ sendNotifyPath, uninstall = false } = {}) {
     if (HOOKS[eventName]) {
       cleaned.push({
         matcher: '',
-        hooks: [{ type: 'command', command: HOOKS[eventName] }],
+        hooks: [{ type: 'command', command: HOOKS[eventName], timeout: 5 }],
       })
     }
 

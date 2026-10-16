@@ -1,19 +1,60 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, shell, dialog } = require('electron')
-const http = require('http')
+const {
+  app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, shell, dialog,
+  Notification, powerMonitor, globalShortcut,
+} = require('electron')
 const path = require('path')
-const fs = require('fs')
-const { execFile } = require('child_process')
+const os = require('os')
 const { installClaudeHook } = require('./scripts/install-hook')
+const { SessionTracker } = require('./lib/sessions')
+const { JsonStore } = require('./lib/store')
+const { focusTerminal } = require('./lib/focus')
+const { startServer, PORT } = require('./lib/server')
 
-const PORT = 17891
-const HISTORY_MAX = 50
+const IS_MAC = process.platform === 'darwin'
+
+if (!app.requestSingleInstanceLock()) {
+  // A second copy would fight over the port and draw a second pet.
+  app.quit()
+  process.exit(0)
+}
+
+// ---------- persistence ----------
+
+const SETTING_RULES = {
+  scale: v => [2, 3, 4].includes(v),
+  sound: v => typeof v === 'boolean',
+  systemNotify: v => typeof v === 'boolean',
+  dnd: v => typeof v === 'boolean',
+  roam: v => typeof v === 'boolean',
+  launchAtLogin: v => typeof v === 'boolean',
+  hotkey: v => typeof v === 'string' && v.length < 60,
+}
+
+const DEFAULT_HOTKEY = 'Alt+Shift+C'
+
+const DEFAULTS = {
+  settings: { scale: 3, sound: true, systemNotify: false, dnd: false, roam: true, launchAtLogin: false, hotkey: DEFAULT_HOTKEY },
+  pet: {
+    name: '클로디',
+    hunger: 80, fun: 70, energy: 90,
+    xp: 0, level: 1,
+    best: { catch: 0, tag: 0 },
+    fed: 0, played: 0, petted: 0,
+    bornAt: 0, lastSeen: 0,
+  },
+}
+
+let store, historyStore, tracker
+let overlay = null
+let panel = null
+let tray = null
+let currentDisplayId = null
+let hotkeyOk = false
 
 // Resolve send-notify.js to a real, on-disk file. In a packaged build it sits
 // inside app.asar.unpacked (see asarUnpack in package.json); `node` can't
-// execute files from inside the asar archive, so we point Claude Code's hook
-// at the unpacked copy. In dev __dirname is the project root, so the
-// .replace() is a no-op.
-function resolveSendNotifyPath() {
+// execute files from inside the asar archive.
+function sendNotifyPath() {
   return path
     .join(__dirname, 'scripts', 'send-notify.js')
     .replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`)
@@ -21,459 +62,474 @@ function resolveSendNotifyPath() {
 
 function syncHook({ uninstall = false } = {}) {
   try {
-    return installClaudeHook({
-      sendNotifyPath: resolveSendNotifyPath(),
-      uninstall,
-    })
+    return installClaudeHook({ sendNotifyPath: sendNotifyPath(), uninstall })
   } catch (e) {
     console.error('[claude-bouncer] hook sync failed:', e.message)
     return null
   }
 }
 
-let petWindow = null
-let panelWindow = null
-let tray = null
-let history = []
-
-const historyPath = path.join(app.getPath('userData'), 'history.json')
-
-function loadHistory() {
-  try { history = JSON.parse(fs.readFileSync(historyPath, 'utf8')) || [] } catch { history = [] }
-}
 function saveHistory() {
-  try { fs.writeFileSync(historyPath, JSON.stringify(history)) } catch (e) { /* ignore */ }
+  historyStore.data.items = tracker.history
+  historyStore.save()
 }
 
-// ---------- Windows ----------
+// ---------- windows ----------
 
-function createPetWindow() {
-  const { workAreaSize } = screen.getPrimaryDisplay()
-  const W = 340
-  const H = 180
-  const winOpts = {
-    width: W,
-    height: H,
-    x: workAreaSize.width - W - 20,
-    y: workAreaSize.height - H - 40,
+const PRELOAD = path.join(__dirname, 'preload.js')
+
+function createOverlay() {
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+  currentDisplayId = display.id
+  const opts = {
+    ...display.workArea,
     transparent: true,
     backgroundColor: '#00000000',
     frame: false,
-    alwaysOnTop: true,
     resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
     hasShadow: false,
     skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    acceptFirstMouse: true,
     roundedCorners: false,
+    enableLargerThanScreen: true,
+    show: false,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: PRELOAD,
       contextIsolation: true,
       nodeIntegration: false,
+      backgroundThrottling: false,
     },
   }
-  // macOS: 'panel' → NSPanel. NSPanels naturally follow the user across
-  // Spaces and show over full-screen apps when the level is high enough.
-  // This is the only reliable way to get multi-Space tracking; plain
-  // NSWindow + canJoinAllSpaces is flaky for transparent windows.
-  if (process.platform === 'darwin') winOpts.type = 'panel'
+  // NSPanel follows the user across Spaces and floats over full-screen apps.
+  if (IS_MAC) opts.type = 'panel'
 
-  petWindow = new BrowserWindow(winOpts)
-  petWindow.loadFile('pet.html')
-  if (process.platform === 'darwin') {
-    // NSPanels need the collection behavior re-asserted + a high window level
-    // so they pop over regular (and full-screen) app windows on every Space.
-    petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-    petWindow.setAlwaysOnTop(true, 'screen-saver')
+  overlay = new BrowserWindow(opts)
+  overlay.setIgnoreMouseEvents(true, { forward: true })
+  if (IS_MAC) {
+    overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    overlay.setAlwaysOnTop(true, 'screen-saver')
+  } else {
+    overlay.setAlwaysOnTop(true, 'screen-saver')
   }
-  petWindow.setBackgroundColor('#00000000')
-  // Most of the pet window is transparent empty space. Default to passing
-  // clicks through to whatever's underneath; the renderer toggles this off
-  // only while the cursor is over the pet image or the visible bubble.
-  petWindow.setIgnoreMouseEvents(true, { forward: true })
+  overlay.loadFile(path.join('renderer', 'overlay.html'))
+  overlay.once('ready-to-show', () => overlay.showInactive())
+  overlay.webContents.on('render-process-gone', (_, d) => {
+    console.error('[claude-bouncer] overlay crashed:', d.reason)
+    setTimeout(() => { overlay?.destroy(); createOverlay() }, 1000)
+  })
 }
 
-function createPanelWindow() {
-  panelWindow = new BrowserWindow({
+function moveOverlayTo(display, { reason = 'follow' } = {}) {
+  if (!overlay || overlay.isDestroyed() || display.id === currentDisplayId) return false
+  currentDisplayId = display.id
+  // macOS refuses to move a visible-on-all-workspaces window across displays.
+  if (IS_MAC) overlay.setVisibleOnAllWorkspaces(false)
+  overlay.setBounds(display.workArea)
+  if (IS_MAC) {
+    overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    overlay.setAlwaysOnTop(true, 'screen-saver')
+  }
+  send(overlay, 'display', { width: display.workArea.width, height: display.workArea.height, reason })
+  return true
+}
+
+function followCursorDisplay(reason) {
+  return moveOverlayTo(screen.getDisplayNearestPoint(screen.getCursorScreenPoint()), { reason })
+}
+
+function raiseOverlay() {
+  if (!overlay || overlay.isDestroyed()) return
+  if (IS_MAC) overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  overlay.setAlwaysOnTop(true, 'screen-saver')
+  if (!overlay.isVisible()) overlay.showInactive()
+  overlay.moveTop()
+}
+
+function createPanel() {
+  panel = new BrowserWindow({
     width: 380,
-    height: 500,
+    height: 560,
     show: false,
     frame: false,
     resizable: false,
     skipTaskbar: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
+    alwaysOnTop: true,
+    backgroundColor: '#1f1a17',
+    webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false },
   })
-  panelWindow.loadFile('panel.html')
-  panelWindow.on('close', (e) => {
-    if (!app.isQuitting) { e.preventDefault(); panelWindow.hide() }
-  })
+  panel.loadFile(path.join('renderer', 'panel.html'))
+  panel.on('close', (e) => { if (!app.isQuitting) { e.preventDefault(); panel.hide() } })
+  panel.on('blur', () => { if (!panel.webContents.isDevToolsOpened()) panel.hide() })
 }
 
-function positionPanelNearPet() {
-  if (!panelWindow || !petWindow) return
-  const [px, py] = petWindow.getPosition()
-  const display = screen.getDisplayNearestPoint({ x: px, y: py })
-  const { x: dX, y: dY, width, height } = display.workArea
-  let x = px - 390
-  let y = py - 340
-  if (x < dX) x = px + 20
-  if (x + 380 > dX + width) x = dX + width - 390
-  if (y < dY) y = dY + 10
-  if (y + 500 > dY + height) y = dY + height - 510
-  panelWindow.setPosition(Math.round(x), Math.round(y))
-}
-
-// Re-assert that the pet is visible on the current macOS Space + on top.
-// With type: 'panel', NSPanels follow the user across Spaces natively —
-// we just need to make sure the window is shown and raised so it pops above
-// whatever the user is currently looking at.
-function ensureOnCurrentSpace() {
-  if (!petWindow || petWindow.isDestroyed()) return
-
-  if (process.platform === 'darwin') {
-    petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-    petWindow.setAlwaysOnTop(true, 'screen-saver')
-  } else {
-    petWindow.setAlwaysOnTop(true, 'floating')
-  }
-  if (!petWindow.isVisible()) petWindow.showInactive()
-  petWindow.moveTop()
-  petWindow.setBackgroundColor('#00000000')
-}
-
-// Before a notify fires, make sure the pet is on the same display as the cursor.
-// If it already is, respect any manual drag position. If it's on another display,
-// teleport to the cursor display's bottom-right. macOS requires disabling
-// visibleOnAllWorkspaces temporarily for setPosition to cross physical displays.
-function moveToCursorDisplayIfNeeded() {
-  if (!petWindow || petWindow.isDestroyed()) return
+function showPanel(tab) {
+  if (!panel) return
   const cursor = screen.getCursorScreenPoint()
-  const cursorDisplay = screen.getDisplayNearestPoint(cursor)
-  const [px, py] = petWindow.getPosition()
-  const petDisplay = screen.getDisplayNearestPoint({ x: px, y: py })
-  if (cursorDisplay.id === petDisplay.id) return
-
-  const [w, h] = petWindow.getSize()
-  const { x: dX, y: dY, width, height } = cursorDisplay.workArea
-  const targetX = Math.round(dX + width - w - 20)
-  const targetY = Math.round(dY + height - h - 40)
-
-  // macOS: must drop visibleOnAllWorkspaces to move across physical displays.
-  // ensureOnCurrentSpace() runs right after and restores it as part of its
-  // hide/show cycle, so no setTimeout needed here.
-  if (process.platform !== 'win32') petWindow.setVisibleOnAllWorkspaces(false)
-  petWindow.setPosition(targetX, targetY)
+  const { x, y, width, height } = screen.getDisplayNearestPoint(cursor).workArea
+  const [w, h] = panel.getSize()
+  const px = Math.min(Math.max(cursor.x - w / 2, x + 8), x + width - w - 8)
+  const py = Math.min(Math.max(cursor.y - h - 16, y + 8), y + height - h - 8)
+  panel.setPosition(Math.round(px), Math.round(py))
+  if (tab) send(panel, 'panel-tab', tab)
+  panel.show()
+  panel.focus()
 }
 
-function togglePanel() {
-  if (!panelWindow) return
-  if (panelWindow.isVisible()) {
-    panelWindow.hide()
-  } else {
-    positionPanelNearPet()
-    panelWindow.show()
-    panelWindow.focus()
+function togglePanel(tab) {
+  if (panel?.isVisible()) panel.hide()
+  else showPanel(tab)
+}
+
+function send(win, channel, payload) {
+  if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
+}
+
+// ---------- data fan-out ----------
+
+function snapshot() {
+  return {
+    pending: tracker.pending(),
+    sessions: tracker.listSessions(),
+    working: tracker.workingCount(),
   }
 }
 
-// ---------- HTTP server ----------
+function broadcastData() {
+  const snap = snapshot()
+  send(overlay, 'data', snap)
+  send(panel, 'data', { ...snap, history: tracker.history })
+  updateTray(snap)
+}
 
-function startServer() {
-  const server = http.createServer((req, res) => {
-    if (req.method === 'POST' && req.url === '/notify') {
-      let body = ''
-      req.on('data', (chunk) => {
-        body += chunk
-        if (body.length > 1_000_000) req.destroy()
-      })
-      req.on('end', () => {
-        let data = {}
-        try { data = JSON.parse(body || '{}') } catch { /* ignore */ }
-        const cwd = typeof data.cwd === 'string' ? data.cwd : ''
-        const rawKind = typeof data.kind === 'string' ? data.kind : ''
-        // fall back: infer kind from the hook event name
-        const kind = rawKind
-          || (data.hook_event_name === 'Notification' ? 'notification' : 'stop')
-        const entry = {
-          kind,
-          message: typeof data.message === 'string' ? data.message : '',
-          cwd,
-          sessionId: data.session_id || data.sessionId || '',
-          transcriptPath: data.transcript_path || '',
-          termProgram: typeof data.term_program === 'string' ? data.term_program : '',
-          termSessionId: typeof data.term_session_id === 'string' ? data.term_session_id : '',
-          tmux: typeof data.tmux === 'string' ? data.tmux : '',
-          ppid: typeof data.ppid === 'string' ? data.ppid : '',
-          ts: Date.now(),
-          projectName: cwd ? path.basename(cwd) : 'unknown',
-        }
-        history.unshift(entry)
-        if (history.length > HISTORY_MAX) history.length = HISTORY_MAX
-        saveHistory()
-        if (petWindow && !petWindow.isDestroyed()) {
-          moveToCursorDisplayIfNeeded()
-          ensureOnCurrentSpace()
-          setTimeout(() => {
-            if (petWindow && !petWindow.isDestroyed()) {
-              petWindow.webContents.send('claude-notify', entry)
-            }
-          }, 60)
-        }
-        if (panelWindow && !panelWindow.isDestroyed()) {
-          panelWindow.webContents.send('history-update', history)
-        }
-        res.writeHead(204); res.end()
-      })
-    } else if (req.method === 'GET' && req.url === '/health') {
-      res.writeHead(200, { 'Content-Type': 'text/plain' })
-      res.end('ok')
-    } else {
-      res.writeHead(404); res.end()
+function broadcastSettings() {
+  send(overlay, 'settings', store.data.settings)
+  send(panel, 'settings', { ...store.data.settings, hotkeyOk })
+  buildTrayMenu()
+}
+
+// ---------- hook events ----------
+
+function onHookEvent(payload) {
+  const { notification, changed, type } = tracker.handle(payload)
+  if (notification) {
+    saveHistory()
+    const quiet = store.data.settings.dnd
+    if (!quiet) {
+      followCursorDisplay('notify')
+      raiseOverlay()
     }
-  })
-  server.on('error', (err) => {
-    console.error('[claude-bouncer] server error:', err.message)
-  })
-  server.listen(PORT, '127.0.0.1', () => {
-    console.log(`[claude-bouncer] listening on 127.0.0.1:${PORT}`)
-  })
+    // tiny delay so a display move settles before the pet starts running
+    setTimeout(() => send(overlay, 'notify', notification), 60)
+    if (store.data.settings.systemNotify && !quiet) showSystemNotification(notification)
+  } else if (changed) {
+    saveHistory()
+  }
+  if (type === 'submit') send(overlay, 'session-busy', true)
+  broadcastData()
 }
 
-// ---------- Tray ----------
+const KIND_TITLE = {
+  done: '✅ 작업 완료',
+  permission: '🔐 권한이 필요해요',
+  input: '💬 입력을 기다려요',
+  attention: '👀 확인이 필요해요',
+}
 
-function createTray() {
-  const iconPath = path.join(__dirname, 'assets', 'claudecode-color.png')
-  let icon = nativeImage.createFromPath(iconPath)
-  if (process.platform === 'darwin') {
-    icon = icon.resize({ width: 18, height: 18 })
+function showSystemNotification(n) {
+  if (!Notification.isSupported()) return
+  const where = [n.projectName, n.branch && `🌿 ${n.branch}`, n.terminal?.label].filter(Boolean).join(' · ')
+  const body = n.kind === 'done' ? (n.prompt || n.summary || '응답을 마쳤어요') : n.message
+  const sys = new Notification({ title: `${KIND_TITLE[n.kind] || 'Claude'} — ${n.projectName}`, subtitle: where, body, silent: true })
+  sys.on('click', () => openNotification(n.id))
+  sys.show()
+}
+
+async function openNotification(id) {
+  const n = tracker.find(id)
+  if (!n) return
+  tracker.markRead(id)
+  saveHistory()
+  broadcastData()
+  await focusTerminal(n, { openPath: p => shell.openPath(p) })
+}
+
+function testNotification(kind) {
+  const cwd = process.cwd() === '/' ? os.homedir() : process.cwd()
+  const base = {
+    session_id: `demo-${kind}`,
+    cwd,
+    term_program: process.env.TERM_PROGRAM || '',
+    bundle_id: process.env.__CFBundleIdentifier || '',
   }
-  tray = new Tray(icon)
-  tray.setToolTip('Claude Bouncer')
+  if (kind === 'done') {
+    onHookEvent({ ...base, kind: 'submit', prompt: '로그인 화면 버그 고쳐줘' })
+    onHookEvent({ ...base, kind: 'stop', last_assistant_message: '로그인 버튼이 두 번 눌리던 문제를 고쳤어요.' })
+  } else {
+    onHookEvent({ ...base, kind: 'submit', prompt: '테스트 돌리고 실패하면 고쳐줘' })
+    onHookEvent({ ...base, kind: 'notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to use Bash' })
+  }
+}
+
+// ---------- summon hotkey ----------
+
+// Bring the pet right in front of the cursor, on whichever screen it's on.
+function summon() {
+  followCursorDisplay('summon')
+  raiseOverlay()
+  send(overlay, 'action', 'summon')
+}
+
+function registerHotkey() {
+  globalShortcut.unregisterAll()
+  const acc = store.data.settings.hotkey
+  hotkeyOk = false
+  if (acc) {
+    try { hotkeyOk = globalShortcut.register(acc, summon) } catch { hotkeyOk = false }
+    if (!hotkeyOk) console.error(`[claude-bouncer] hotkey ${acc} is taken or invalid`)
+  }
+  return hotkeyOk
+}
+
+// ---------- tray ----------
+
+function trayIcon() {
+  const img = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'))
+  if (!img.isEmpty()) return img
+  return nativeImage.createFromPath(path.join(__dirname, 'assets', 'claudecode-color.png')).resize({ width: 18, height: 18 })
+}
+
+function updateTray(snap) {
+  if (!tray) return
+  const needs = snap.pending.filter(n => n.kind !== 'done').length
+  const done = snap.pending.length - needs
+  if (IS_MAC) tray.setTitle(needs ? ` ❗${needs}` : done ? ` ${done}` : '')
+  const parts = []
+  if (needs) parts.push(`응답 필요 ${needs}`)
+  if (done) parts.push(`새 완료 ${done}`)
+  if (snap.working) parts.push(`작업 중 ${snap.working}`)
+  tray.setToolTip(`Claude Bouncer${parts.length ? ' — ' + parts.join(', ') : ''}`)
+}
+
+function petAction(action) {
+  raiseOverlay()
+  send(overlay, 'action', action)
+}
+
+function buildTrayMenu() {
+  if (!tray) return
+  const s = store.data.settings
   const menu = Menu.buildFromTemplate([
-    { label: 'Show panel', click: togglePanel },
+    { label: '알림 · 세션 패널', click: () => showPanel('inbox') },
+    { label: '펫 부르기', accelerator: hotkeyOk ? s.hotkey : undefined, registerAccelerator: false, click: summon },
+    { type: 'separator' },
+    { label: '🍪 밥 주기', click: () => petAction('feed') },
+    { label: '⚽ 공놀이', click: () => petAction('ball') },
+    { label: '🎮 쿠키 받기 게임', click: () => petAction('game:catch') },
+    { label: '🏃 술래잡기 게임', click: () => petAction('game:tag') },
+    { type: 'separator' },
+    { label: '방해 금지', type: 'checkbox', checked: s.dnd, click: (i) => setSetting('dnd', i.checked) },
+    { label: '돌아다니기', type: 'checkbox', checked: s.roam, click: (i) => setSetting('roam', i.checked) },
     {
-      label: 'Test bounce',
-      click: () => {
-        const entry = {
-          cwd: process.cwd(),
-          sessionId: 'testsession',
-          termProgram: process.env.TERM_PROGRAM || 'test',
-          termSessionId: '',
-          ts: Date.now(),
-          projectName: path.basename(process.cwd()),
-        }
-        moveToCursorDisplayIfNeeded()
-        setTimeout(() => petWindow?.webContents.send('claude-notify', entry), 80)
-      },
+      label: '테스트 알림',
+      submenu: [
+        { label: '작업 완료', click: () => testNotification('done') },
+        { label: '권한 요청', click: () => testNotification('permission') },
+      ],
+    },
+    {
+      label: 'Claude Code 훅',
+      submenu: [
+        {
+          label: '다시 설치',
+          click: () => {
+            const r = syncHook()
+            dialog.showMessageBox({
+              type: r ? 'info' : 'error',
+              message: r ? `훅 설치 완료: ${r.installed.join(', ')}` : '훅 설치에 실패했어요.',
+              detail: r ? r.settingsPath : undefined,
+            })
+          },
+        },
+        {
+          label: '제거',
+          click: async () => {
+            const { response } = await dialog.showMessageBox({
+              type: 'warning', buttons: ['취소', '제거'], defaultId: 0, cancelId: 0,
+              message: 'Claude Code 설정에서 claude-bouncer 훅을 제거할까요?',
+              detail: '앱을 다시 켜면 자동으로 다시 설치돼요.',
+            })
+            if (response !== 1) return
+            const r = syncHook({ uninstall: true })
+            dialog.showMessageBox({ type: r ? 'info' : 'error', message: r ? `훅 ${r.removed}개를 제거했어요.` : '제거에 실패했어요.' })
+          },
+        },
+      ],
     },
     { type: 'separator' },
-    {
-      label: 'Reinstall hook',
-      click: () => {
-        const r = syncHook()
-        dialog.showMessageBox({
-          type: r ? 'info' : 'error',
-          message: r
-            ? `Hook installed: ${r.installed.join(', ')}`
-            : 'Hook install failed — see console for details.',
-          detail: r ? r.settingsPath : undefined,
-        })
-      },
-    },
-    {
-      label: 'Uninstall hook',
-      click: async () => {
-        const { response } = await dialog.showMessageBox({
-          type: 'warning',
-          buttons: ['Cancel', 'Remove'],
-          defaultId: 0,
-          cancelId: 0,
-          message: 'Remove claude-bouncer from Claude Code hooks?',
-          detail: 'You can re-add it any time via Reinstall hook.',
-        })
-        if (response !== 1) return
-        const r = syncHook({ uninstall: true })
-        dialog.showMessageBox({
-          type: r ? 'info' : 'error',
-          message: r
-            ? `Removed ${r.removed} hook entr${r.removed === 1 ? 'y' : 'ies'}.`
-            : 'Hook uninstall failed — see console for details.',
-        })
-      },
-    },
-    { type: 'separator' },
-    {
-      label: 'Quit',
-      click: () => { app.isQuitting = true; app.quit() },
-    },
+    { label: '종료', click: () => { app.isQuitting = true; app.quit() } },
   ])
   tray.setContextMenu(menu)
-  tray.on('click', togglePanel)
 }
 
-// ---------- App lifecycle ----------
+function createTray() {
+  tray = new Tray(trayIcon())
+  buildTrayMenu()
+  updateTray(snapshot())
+}
 
-app.whenReady().then(() => {
-  if (process.platform === 'darwin' && app.dock) {
-    app.dock.hide()
+// ---------- settings ----------
+
+function setSetting(key, value) {
+  if (!SETTING_RULES[key] || !SETTING_RULES[key](value)) return store.data.settings
+  const prev = store.data.settings[key]
+  store.data.settings[key] = value
+  if (key === 'hotkey' && value && !registerHotkey()) {
+    // keep the old, working shortcut instead of leaving none
+    store.data.settings[key] = prev
+    registerHotkey()
+    broadcastSettings()
+    return { ...store.data.settings, hotkeyError: value }
   }
-  // Re-register the hook on every launch so it tracks the current binary
-  // location — handles "user moved the .app" without manual intervention.
-  syncHook()
-  loadHistory()
-  createPetWindow()
-  createPanelWindow()
-  createTray()
-  startServer()
-})
+  if (key === 'hotkey' && !value) registerHotkey()
+  store.save()
+  if (key === 'launchAtLogin') {
+    try { app.setLoginItemSettings({ openAtLogin: value }) } catch {}
+  }
+  broadcastSettings()
+  return store.data.settings
+}
 
-app.on('window-all-closed', (e) => {
-  if (!app.isQuitting) e?.preventDefault?.()
-})
+// ---------- cursor / idle feed for the pet ----------
+
+function startFeeds() {
+  let last = ''
+  setInterval(() => {
+    if (!overlay || overlay.isDestroyed()) return
+    const p = screen.getCursorScreenPoint()
+    const b = overlay.getBounds()
+    const inside = p.x >= b.x && p.y >= b.y && p.x < b.x + b.width && p.y < b.y + b.height
+    const key = `${p.x},${p.y},${inside}`
+    if (key === last) return
+    last = key
+    send(overlay, 'cursor', { x: p.x - b.x, y: p.y - b.y, inside })
+  }, 33)
+
+  setInterval(() => {
+    send(overlay, 'idle', powerMonitor.getSystemIdleTime())
+  }, 4000)
+  powerMonitor.on('lock-screen', () => send(overlay, 'idle', 9999))
+  powerMonitor.on('unlock-screen', () => send(overlay, 'idle', 0))
+}
 
 // ---------- IPC ----------
 
-// ---------- Focus terminal ----------
-// Best effort: activate (and when possible, select the exact tab/session) of
-// whichever terminal app Claude was running in. iTerm2 is the only one that
-// lets us target a specific session by its UUID; for the rest we just
-// activate the parent app.
+function registerIpc() {
+  ipcMain.handle('state:get', () => ({
+    settings: store.data.settings,
+    hotkeyOk,
+    pet: store.data.pet,
+    platform: process.platform,
+    port: PORT,
+    ...snapshot(),
+  }))
+  ipcMain.handle('pet:save', (_, pet) => {
+    if (!pet || typeof pet !== 'object') return
+    store.data.pet = { ...store.data.pet, ...pet, best: { ...store.data.pet.best, ...(pet.best || {}) } }
+    store.save()
+    send(panel, 'pet', store.data.pet)
+  })
+  ipcMain.handle('settings:set', (_, key, value) => setSetting(key, value))
 
-function runAppleScript(script) {
-  return new Promise((resolve) => {
-    execFile('osascript', ['-e', script], { timeout: 3000 }, (err) => {
-      if (err) console.error('[focus-terminal] osascript:', err.message)
-      resolve()
-    })
+  ipcMain.on('mouse:ignore', (_, ignore) => {
+    if (!overlay || overlay.isDestroyed()) return
+    if (ignore) overlay.setIgnoreMouseEvents(true, { forward: true })
+    else overlay.setIgnoreMouseEvents(false)
+  })
+
+  ipcMain.handle('notif:open', (_, id) => openNotification(String(id)))
+  ipcMain.handle('notif:dismiss', (_, id) => {
+    if (tracker.markRead(String(id))) { saveHistory(); broadcastData() }
+  })
+  ipcMain.handle('notif:readAll', () => { tracker.markAllRead(); saveHistory(); broadcastData() })
+  ipcMain.handle('history:get', () => ({ ...snapshot(), history: tracker.history }))
+  ipcMain.handle('history:clear', () => { tracker.clear(); saveHistory(); broadcastData() })
+  ipcMain.handle('session:focus', (_, id) => {
+    const s = tracker.listSessions().find(x => x.id === id)
+    if (s) return focusTerminal({ terminal: s.terminal, cwd: s.cwd }, { openPath: p => shell.openPath(p) })
+  })
+
+  ipcMain.handle('panel:toggle', (_, tab) => togglePanel(tab))
+  ipcMain.handle('panel:close', () => panel?.hide())
+  ipcMain.handle('display:follow', () => followCursorDisplay('follow'))
+  ipcMain.handle('pet:action', (_, action) => action === 'summon' ? summon() : petAction(String(action)))
+  // while the panel records a new shortcut, the old one must not fire
+  ipcMain.handle('hotkey:pause', (_, paused) => { if (paused) globalShortcut.unregisterAll(); else registerHotkey() })
+  ipcMain.handle('open-folder', (_, cwd) => {
+    if (typeof cwd === 'string' && path.isAbsolute(cwd)) shell.openPath(cwd)
+  })
+  ipcMain.handle('test-notify', (_, kind) => testNotification(kind === 'done' ? 'done' : 'permission'))
+  ipcMain.handle('hook:reinstall', () => !!syncHook())
+
+  ipcMain.on('menu:pet', () => {
+    const s = store.data.settings
+    Menu.buildFromTemplate([
+      { label: '🍪 밥 주기', click: () => petAction('feed') },
+      { label: '⚽ 공놀이', click: () => petAction('ball') },
+      { label: '🎮 쿠키 받기 게임', click: () => petAction('game:catch') },
+      { label: '🏃 술래잡기 게임', click: () => petAction('game:tag') },
+      { label: '💤 재우기', click: () => petAction('sleep') },
+      { type: 'separator' },
+      { label: '알림 · 세션 패널', click: () => showPanel('inbox') },
+      { label: '펫 상태', click: () => showPanel('pet') },
+      { label: '방해 금지', type: 'checkbox', checked: s.dnd, click: (i) => setSetting('dnd', i.checked) },
+      { label: '돌아다니기', type: 'checkbox', checked: s.roam, click: (i) => setSetting('roam', i.checked) },
+    ]).popup()
   })
 }
 
-function escapeAppleScriptString(s) {
-  return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-}
+// ---------- lifecycle ----------
 
-async function focusTerminalMac(entry) {
-  const term = String(entry.termProgram || '')
-  const tsid = String(entry.termSessionId || '')
+app.whenReady().then(() => {
+  if (IS_MAC && app.dock) app.dock.hide()
 
-  // iTerm2 — TERM_SESSION_ID format "w0t1p0:UUID". Target session by unique id.
-  if (/iTerm/i.test(term)) {
-    const uuid = tsid.includes(':') ? tsid.split(':').pop() : tsid
-    if (uuid) {
-      const safeUuid = escapeAppleScriptString(uuid)
-      const script = `
-        tell application "iTerm"
-          activate
-          repeat with w in windows
-            repeat with t in tabs of w
-              repeat with s in sessions of t
-                if unique id of s is "${safeUuid}" then
-                  tell w to select
-                  tell t to select
-                  select s
-                  return
-                end if
-              end repeat
-            end repeat
-          end repeat
-        end tell`
-      return runAppleScript(script)
+  store = new JsonStore(path.join(app.getPath('userData'), 'state.json'), DEFAULTS)
+  historyStore = new JsonStore(path.join(app.getPath('userData'), 'history-v2.json'), { items: [] })
+  tracker = new SessionTracker({ history: historyStore.data.items })
+  if (!store.data.pet.bornAt) { store.data.pet.bornAt = Date.now(); store.save() }
+
+  // Re-register the hook on every launch so it tracks the current binary location.
+  syncHook()
+  registerIpc()
+  createOverlay()
+  createPanel()
+  registerHotkey()
+  createTray()
+  startFeeds()
+  startServer({ onEvent: onHookEvent })
+
+  screen.on('display-removed', () => {
+    const ids = screen.getAllDisplays().map(d => d.id)
+    if (!ids.includes(currentDisplayId)) { currentDisplayId = null; followCursorDisplay('display-removed') }
+  })
+  screen.on('display-metrics-changed', (_, d) => {
+    if (d.id === currentDisplayId && overlay) {
+      overlay.setBounds(d.workArea)
+      send(overlay, 'display', { width: d.workArea.width, height: d.workArea.height, reason: 'metrics' })
     }
-    return runAppleScript(`tell application "iTerm" to activate`)
-  }
-
-  if (/Apple_Terminal/i.test(term)) {
-    return runAppleScript(`tell application "Terminal" to activate`)
-  }
-
-  if (/vscode|cursor/i.test(term)) {
-    // VSCode/Cursor: activate the app; exact terminal pane can't be targeted.
-    const appName = /cursor/i.test(term) ? 'Cursor' : 'Visual Studio Code'
-    return runAppleScript(`tell application "${appName}" to activate`)
-  }
-
-  if (/Warp/i.test(term)) {
-    return runAppleScript(`tell application "Warp" to activate`)
-  }
-
-  if (/ghostty/i.test(term)) {
-    return runAppleScript(`tell application "Ghostty" to activate`)
-  }
-
-  // Last resort: open the cwd folder so the user at least has context.
-  if (entry.cwd) shell.openPath(entry.cwd)
-}
-
-// Windows equivalent — AppActivate by window title. We can't target a specific
-// terminal tab like iTerm2, but we can raise the right app. Falls through to
-// opening the cwd folder when we don't recognize the terminal.
-async function focusTerminalWin(entry) {
-  const term = String(entry.termProgram || '')
-  let title = null
-  if (/WindowsTerminal|wt/i.test(term)) title = 'Windows Terminal'
-  else if (/cursor/i.test(term)) title = 'Cursor'
-  else if (/vscode|Code/i.test(term)) title = 'Visual Studio Code'
-  else if (/Hyper/i.test(term)) title = 'Hyper'
-
-  if (title) {
-    const safeTitle = title.replace(/'/g, "''")
-    const script = `(New-Object -ComObject WScript.Shell).AppActivate('${safeTitle}') | Out-Null`
-    return new Promise((resolve) => {
-      execFile('powershell', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', script],
-        { timeout: 3000 }, () => resolve())
-    })
-  }
-  if (entry.cwd) shell.openPath(entry.cwd)
-}
-
-ipcMain.handle('focus-terminal', async (_, entry) => {
-  if (!entry || typeof entry !== 'object') return
-  if (process.platform === 'darwin') return focusTerminalMac(entry)
-  if (process.platform === 'win32') return focusTerminalWin(entry)
-  // Linux fallback: open the folder
-  if (entry.cwd) shell.openPath(entry.cwd)
+  })
 })
 
-ipcMain.handle('get-history', () => history)
-ipcMain.handle('clear-history', () => { history = []; saveHistory(); return history })
-ipcMain.handle('open-folder', (_, cwd) => {
-  if (typeof cwd === 'string' && cwd.startsWith('/')) shell.openPath(cwd)
-})
-ipcMain.handle('open-external', (_, url) => {
-  if (typeof url === 'string' && /^https?:\/\//.test(url)) shell.openExternal(url)
-})
-ipcMain.handle('toggle-panel', togglePanel)
-ipcMain.handle('close-panel', () => panelWindow?.hide())
-
-ipcMain.handle('set-ignore-mouse', (_, ignore) => {
-  if (!petWindow || petWindow.isDestroyed()) return
-  if (ignore) petWindow.setIgnoreMouseEvents(true, { forward: true })
-  else petWindow.setIgnoreMouseEvents(false)
-})
-
-let dragInterval = null
-let dragOffsetX = 0
-let dragOffsetY = 0
-ipcMain.handle('start-drag', (_, { offsetX, offsetY }) => {
-  if (!Number.isFinite(offsetX) || !Number.isFinite(offsetY)) return
-  dragOffsetX = offsetX
-  dragOffsetY = offsetY
-  if (process.platform !== 'win32') {
-    petWindow.setVisibleOnAllWorkspaces(false)
-  }
-  if (dragInterval) clearInterval(dragInterval)
-  dragInterval = setInterval(() => {
-    if (!petWindow) return
-    const cursor = screen.getCursorScreenPoint()
-    petWindow.setPosition(cursor.x - dragOffsetX, cursor.y - dragOffsetY)
-  }, 16)
-})
-ipcMain.handle('stop-drag', () => {
-  if (dragInterval) { clearInterval(dragInterval); dragInterval = null }
-  if (process.platform !== 'win32' && petWindow) {
-    petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  }
-  if (petWindow) petWindow.setBackgroundColor('#00000000')
+app.on('second-instance', () => showPanel('inbox'))
+app.on('window-all-closed', (e) => { if (!app.isQuitting) e?.preventDefault?.() })
+app.on('will-quit', () => globalShortcut.unregisterAll())
+app.on('before-quit', () => {
+  app.isQuitting = true
+  store?.flush()
+  historyStore?.flush()
 })

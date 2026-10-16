@@ -1,11 +1,16 @@
 # claude-bouncer
 
-🐾 Claude Code 세션 알림 데스크탑 펫 (macOS / Windows)
-🐾 Desktop notification pet for Claude Code sessions (macOS / Windows)
+<img src="docs/icon.png" width="96" align="right" alt="Claude Bouncer icon" />
+
+🐾 바탕화면을 돌아다니는 작은 도트 클로드 — 같이 놀고, **어느 Claude Code 세션이 나를 부르는지** 확실하게 알려줘요. (macOS / Windows)
+🐾 A tiny pixel Claude that lives on your desktop — plays with you, and tells you **exactly which Claude Code session needs you**.
 
 **[🇰🇷 한국어](#한국어) · [🇺🇸 English](#english)**
 
-https://github.com/user-attachments/assets/ff363262-e4e2-40e7-8406-261baa0feb7f
+<p align="center">
+  <img src="docs/notify-cards.png" width="300" alt="notification cards" />
+  <img src="docs/game-catch.png" width="330" alt="cookie catch game" />
+</p>
 
 ---
 
@@ -13,356 +18,160 @@ https://github.com/user-attachments/assets/ff363262-e4e2-40e7-8406-261baa0feb7f
 
 ### 이게 뭐야?
 
-여러 터미널에서 Claude Code를 돌려두고 다른 일 하다가, "아 끝났나?" 하고 돌아가보는 일 많으시죠. claude-bouncer는 각 세션이 **응답을 끝냈을 때** 또는 **권한/입력을 기다릴 때** 화면 우하단 펫이 통통 튀면서 알려줍니다. 펫을 클릭하면 그 세션이 실행 중이던 **터미널로 바로 점프**해요 (iTerm2는 정확한 탭까지).
+여러 터미널에서 Claude Code를 돌려두고 다른 일 하다 보면 "어느 창이 끝났지?", "권한 요청 떠 있는 거 아냐?" 하게 되죠.
+클로디(클로드 도트 펫)는 평소엔 화면 여기저기를 돌아다니며 놀다가, 세션이 **끝나거나 나를 기다리면** 커서 앞으로 달려와서
+**어떤 프로젝트·브랜치에서, 무슨 요청이, 어느 터미널 탭에서** 끝났는지 카드로 보여줘요. 카드를 누르면 그 탭으로 바로 이동합니다.
 
-### 주요 기능
+### 알림 — 확실하게
 
-- 🐾 **통통 튀는 펫** — Stop / Notification 이벤트에 맞춰 화면 우하단에서 바운스
-- 🖥️ **멀티 디스플레이 대응** — 커서가 있는 모니터로 펫이 따라옴
-- 🪟 **전체화면 위에서도 표시** — macOS Space를 넘나들며 항상 최상위
-- 🎯 **원클릭 복귀** — 펫 클릭 시 해당 세션의 터미널 활성화
-  - macOS: iTerm2 / Terminal / VSCode / Cursor / Warp / Ghostty (iTerm2는 정확한 탭까지)
-  - Windows: Windows Terminal / VSCode / Cursor / Hyper (앱 활성화)
-- 📜 **히스토리 패널** — 최근 50개 알림 기록, 트레이 아이콘 클릭으로 열기
-- 🔀 **세션 구분** — `TERM_SESSION_ID`, `tmux`, `ppid`까지 써서 같은 cwd의 여러 세션 식별
-- 🧹 **자동 훅 관리** — 설치/삭제 스크립트가 `~/.claude/settings.json`을 안전하게 편집
-- 🌍 **의존성 최소화** — Node.js만 있으면 OK (jq/curl 같은 외부 CLI 불필요)
-
-### 요구사항
-
-| | 설명 |
+| | |
 |---|---|
-| OS | macOS 또는 Windows 10/11 |
-| Node.js 18+ | Electron 실행 및 훅 디스패처 |
-| Claude Code | 알림 대상 |
+| 🃏 **출처가 보이는 카드** | 종류(작업 완료 / 권한 요청 / 입력 대기) · 프로젝트 · 🌿 git 브랜치 · 내가 보낸 요청 · 결과 요약 · 걸린 시간 · 터미널 앱과 탭(tty, tmux pane) |
+| 🎯 **원클릭 이동** | iTerm2·macOS 터미널은 **정확한 탭까지**, tmux는 pane까지, 그 외(VS Code, Cursor, Warp, Ghostty, JetBrains…)는 앱 활성화 |
+| ❗ **답할 때까지 안 사라짐** | 권한/입력 요청은 처리할 때까지 남고, 클로디가 옆에서 콩콩 뛰며 기다려요. 그 세션에 다시 입력하면 자동으로 정리 |
+| 🔴 **배지 · 메뉴바 카운트** | 머리 위 배지와 메뉴바에 미확인 수 표시 (응답 필요는 빨간색) |
+| ⏳ **작업 중 표시** | 일하는 세션이 있으면 머리 옆에 `•••`, 클로디도 같이 타닥타닥 |
+| 💤 **자리 비움 요약** | 자리 비운 사이 온 알림을 돌아오면 "알림 3개 왔어!"로 알려줌 |
+| 🖥 **세션 패널** | 열려 있는 세션 전체 현황 (작업 중 / 응답 필요 / 끝남) |
+| 🔕 **방해 금지** | 소리·이동 없이 배지로만. 원하면 시스템 알림도 같이 |
 
-확인:
-```bash
-node -v        # v18.x 이상
-npm -v
-claude --version
-```
+<p align="center"><img src="docs/panel-inbox.png" width="260" /> <img src="docs/panel-sessions.png" width="260" /></p>
+
+### 같이 놀기
+
+<img src="docs/petting.png" width="200" align="right" />
+
+- **⌥⇧C (Windows: Alt+Shift+C)** — 어디서든 누르면 클로디가 **커서 바로 앞으로 뿅** 나타나요. 알림이 있으면 카드도 같이 펼침. 키는 설정에서 바꿀 수 있어요
+- **쓰다듬기** — 클로디 위에서 마우스를 좌우로 문지르면 ♥
+- **클릭** 반응 · **드래그해서 던지기**(세게 던지면 어지러워해요) · **더블클릭** 놀이 메뉴 · **우클릭** 메뉴
+- **🍪 밥 주기** — 쿠키를 들고 원하는 곳에 클릭해서 떨어뜨리면 달려와서 냠냠
+- **⚽ 공놀이** — 공을 클릭해서 차면 클로디가 쫓아가서 나한테 다시 차줘요
+- **🎮 쿠키 받기** — 마우스로 클로디를 움직여 쿠키 받기, 🐛 버그는 피하기 (30초)
+- **🏃 술래잡기** — 도망다니는 클로디를 클릭해서 잡기 (20초)
+- **배고픔 · 재미 · 기운**이 시간에 따라 줄어서, 심심하면 먼저 와서 "놀아줘!" 하고, 졸리면 자요. 놀아줄수록 레벨 업
+
+<p align="center"><img src="docs/sprite-sheet.png" width="560" alt="sprite sheet" /></p>
 
 ### 설치 — macOS
 
-**1. Node.js 설치**
-
-[Homebrew](https://brew.sh)로:
 ```bash
-# Homebrew가 없다면
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-brew install node
-```
-
-또는 공식 설치파일: https://nodejs.org (LTS 권장)
-
-**2. 프로젝트 받기 & 실행**
-
-```bash
+brew install node            # Node.js 18+ 가 없다면
 git clone https://github.com/ESeungJun/claude-bouncer.git
 cd claude-bouncer
-./start.command
+./start.command              # Finder에서 더블클릭해도 돼요
 ```
 
-Finder에서 `start.command`를 **더블클릭**해도 됩니다. 처음 실행 시 `npm install` + 훅 설치가 자동으로 진행돼요.
-
-> **터미널 창 없이 쓰고 싶다면** 아래 [정식 앱으로 빌드](#정식-앱으로-빌드) 섹션을 참고하세요. `.app` 번들로 만들면 더블클릭만으로 트레이 아이콘만 뜨고 터미널은 안 떠요.
-
-### 정식 앱으로 빌드
-
-소스 모드(`./start.command`) 대신 `.app` / `.exe` 번들로 만들고 싶을 때:
-
-```bash
-# macOS — .app + DMG + zip 생성
-npm run dist:mac
-
-# Windows — NSIS 설치파일(.exe) 생성
-npm run dist:win
-
-# 빠른 테스트용 (압축/서명 생략, .app만)
-npm run pack
-```
-
-결과물은 `dist/` 폴더에 생깁니다.
-- macOS: `dist/Claude Bouncer-<version>.dmg` 또는 `dist/mac-arm64/Claude Bouncer.app`
-- Windows: `dist/Claude Bouncer Setup <version>.exe`
-
-`.app`을 `/Applications`로 옮기고 더블클릭하면 트레이 아이콘만 뜨고, 훅은 자동으로 `.app` 내부 경로로 갱신됩니다(앱을 다른 위치로 옮긴 뒤 다시 실행해도 자동 갱신). 첫 실행 시 macOS Gatekeeper 경고가 뜨면 우클릭 → 열기로 한 번만 허용하세요.
-
-훅 관리는 트레이 메뉴에서:
-- `Reinstall hook` — 훅 재등록 (앱을 옮긴 뒤에 유용)
-- `Uninstall hook` — Claude Code 설정에서 제거
+처음 실행 시 `npm install`과 Claude Code 훅 설치가 자동으로 진행돼요.
 
 ### 설치 — Windows
 
-**1. Node.js 설치**
+1. https://nodejs.org 에서 LTS 설치 ("Add to PATH" 체크), https://git-scm.com/download/win 에서 Git 설치
+2. PowerShell:
+   ```
+   git clone https://github.com/ESeungJun/claude-bouncer.git
+   cd claude-bouncer
+   start.bat
+   ```
+SmartScreen 경고가 뜨면 "추가 정보 → 실행".
 
-https://nodejs.org 에서 LTS 설치파일(.msi)을 받아서 실행. 설치 도중 "Add to PATH" 옵션이 체크되어 있는지 확인하세요.
+### 정식 앱으로 빌드
 
-설치 후 PowerShell이나 cmd에서 확인:
-```
-node -v
-npm -v
-```
-
-**2. Git 설치 (없다면)**
-
-https://git-scm.com/download/win
-
-**3. 프로젝트 받기 & 실행**
-
-PowerShell 또는 cmd:
-```
-git clone https://github.com/ESeungJun/claude-bouncer.git
-cd claude-bouncer
-start.bat
+```bash
+npm run dist:mac   # .app + DMG + zip
+npm run dist:win   # NSIS 설치파일
+npm run pack       # 빠른 테스트용 .app
 ```
 
-또는 탐색기에서 `start.bat`을 **더블클릭**. 처음 실행 시 의존성 설치 + 훅 등록이 자동 진행됩니다.
-
-> **참고**: Windows Defender SmartScreen이 처음에 경고할 수 있어요. "추가 정보" → "실행"을 누르면 다음부턴 뜨지 않습니다.
+결과물은 `dist/`에 생겨요. `.app`을 옮겨도 다음 실행 때 훅 경로가 자동으로 갱신돼요.
 
 ### 테스트
 
-앱이 시작되면 트레이(macOS: 메뉴바 상단, Windows: 작업 표시줄 우측) 아이콘이 생깁니다.
-
-- 아이콘 **우클릭 → Test bounce** 를 눌러 펫이 튀는지 확인
-- 아무 터미널에서 Claude Code를 실행하고 응답이 끝나는 순간을 관찰
-
-### 사용법
-
-- 🖱️ **펫 드래그**: 원하는 위치로 이동
-- 🖱️ **펫 클릭**: 알림을 보낸 터미널로 점프
-- 🎭 **트레이 아이콘 클릭**: 히스토리 패널 토글
-- **우클릭 메뉴**:
-  - `Show panel` — 히스토리 패널 열기
-  - `Test bounce` — 동작 테스트
-  - `Quit` — 앱 종료
+메뉴바(트레이) 아이콘 → **테스트 알림 → 작업 완료 / 권한 요청**, 또는 패널 ⚙ 설정 탭의 테스트 버튼.
 
 ### 동작 원리
 
-1. 설치 스크립트가 Claude Code의 `Stop`과 `Notification` 훅에 `node send-notify.js` 명령을 등록
-2. 세션이 종료되거나 입력을 기다릴 때, 훅이 JSON을 `http://127.0.0.1:17891/notify`로 POST
-3. 앱은 이를 받아 히스토리에 저장하고, 커서가 있는 디스플레이 우하단에서 펫을 바운스
-4. 펫 클릭 시 OS별 방법으로 해당 터미널 활성화
-   - macOS: AppleScript (iTerm2는 `unique id`로 정확한 세션 선택)
-   - Windows: PowerShell `AppActivate`로 윈도우 활성화
+1. 앱이 `~/.claude/settings.json`에 `Stop` · `Notification` · `UserPromptSubmit` · `SessionEnd` 훅을 등록 (기존 훅은 건드리지 않고 자기 것만 갱신)
+2. 훅(`scripts/send-notify.js`)이 이벤트 JSON에 터미널 정보(앱 번들 ID, tty, tmux pane)를 붙여 `127.0.0.1:17891`로 POST — 실패해도 Claude 세션엔 영향 없음
+3. 앱이 세션별 상태를 추적하고, 대화 기록(transcript)에서 마지막 요청/응답 요약을 읽어 카드를 만듦
+4. 화면 전체를 덮는 투명 창 위에서 클로디가 움직이고, 클로디·카드·메뉴 위에서만 마우스를 받으며 나머지 클릭은 그대로 아래 앱으로 통과
 
-훅 자체는 외부 CLI(jq, curl) 없이 Node만 사용하므로 설치 부담이 적고 OS 간 동작이 일관됩니다.
+보안: 서버는 localhost에서만 열리고 `application/json` 요청만 받으며 `Origin` 헤더가 있는 요청(브라우저)은 거절해요.
 
 ### 제거
 
-훅만 제거:
 ```bash
-npm run uninstall-hook
-```
-
-완전 제거:
-```bash
-npm run uninstall-hook
-# 이후 프로젝트 폴더 삭제
+npm run uninstall-hook   # 훅만 제거 (메뉴바 → Claude Code 훅 → 제거 도 가능)
 ```
 
 ### 문제 해결
 
-**펫이 안 뜨는데?**
-- 트레이에 아이콘이 있는지 확인. 있으면 `Test bounce`로 테스트
-- `~/.claude/settings.json`에 `send-notify.js`를 포함한 훅이 있는지 확인
+- **클로디가 안 보여요** — 메뉴바 아이콘 → `펫 부르기` 또는 단축키. 방해 금지가 켜져 있는지 확인
+- **알림이 안 와요** — `~/.claude/settings.json`에 `send-notify.js` 훅이 있는지, 메뉴바 → 테스트 알림이 되는지 확인
+- **단축키가 안 먹어요** — 다른 앱이 쓰는 조합일 수 있어요. 패널 ⚙ 설정에서 다른 키로 바꾸면 충돌 여부를 바로 알려줘요
+- **포트 17891 사용 중** — `lsof -i :17891` (Windows: `netstat -ano | findstr :17891`)
 
-**macOS: "확인되지 않은 개발자" 경고**
-- `start.command` 우클릭 → 열기 한 번만 하면 다음부턴 안 뜸
+### 레퍼런스
 
-**Windows: SmartScreen 경고**
-- "추가 정보" → "실행"
+만들면서 참고한 데스크톱 펫들:
 
-**포트 17891이 이미 사용 중**
-- macOS/Linux: `lsof -i :17891`
-- Windows: `netstat -ano | findstr :17891`
-- 충돌하는 프로세스 종료 후 재시작
+- [Shimeji](https://en.wikipedia.org/wiki/Shimeji_(software)) — 화면 위를 걸어 다니고 창에 매달리는 데스크톱 마스코트의 원조
+- [Desktop Goose](https://samperson.itch.io/desktop-goose) — 마우스를 낚아채는 장난꾸러기 펫, "펫이 먼저 말 걸기"의 레퍼런스
+- [VPet-Simulator](https://store.steampowered.com/app/1920960/VPet/) / 다마고치 — 배고픔·기분 같은 돌보기 요소
+- [Pets Therapy – Desktop Pets](https://www.hartware.de/?p=368207) · [Peekoo](https://www.producthunt.com/p/peekoo) · [Petnunu](https://www.producthunt.com/products/petnunu-desktop) — 최근 데스크톱 펫들의 행동 패턴
+- [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk) — Claude Code 상태를 보여주는 도트 펫. claude-bouncer는 여기서 더 나아가 **"같이 놀기"와 "알림 출처를 확실히"** 쪽에 집중했어요
 
-**`node` 명령어를 찾을 수 없음**
-- Node.js 설치 확인. Windows는 설치 시 "Add to PATH" 체크 필수
+캐릭터 컨셉 시트와 앱 아이콘은 [Higgsfield](https://higgsfield.ai)로 만들었고(`docs/concept/`), 실제 게임 속 스프라이트는 프레임이 정확히 맞도록 코드로 한 픽셀씩 찍었어요(`renderer/js/sprites.js`, `npm run sprites`로 시트 재생성). 폰트는 [Galmuri](https://github.com/quiple/galmuri) (OFL).
 
 ---
 
 ## English
 
-### What is this?
+### What is it?
 
-If you run multiple Claude Code sessions and keep switching back to check if they're done, claude-bouncer watches every session and pops a pet on your screen the moment any of them **finishes** or **needs your input**. Click the pet to jump back to the exact terminal (iTerm2 even jumps to the right tab).
+Clawd's little cousin lives on your desktop. Most of the time it wanders around, naps and asks you to play. When any Claude Code session **finishes** or **needs you**, it runs up to your cursor with a card that says exactly **which project and branch, which prompt, and which terminal tab** — click it to jump straight there.
 
-### Features
+### Notifications
 
-- 🐾 **Bouncing pet** — animates at the bottom-right on Stop / Notification events
-- 🖥️ **Multi-display aware** — the pet follows the display your cursor is on
-- 🪟 **Shows over full-screen apps** — tracks across macOS Spaces, stays on top
-- 🎯 **One-click return** — clicking the pet activates the source terminal
-  - macOS: iTerm2 / Terminal / VSCode / Cursor / Warp / Ghostty (iTerm2 targets the exact tab)
-  - Windows: Windows Terminal / VSCode / Cursor / Hyper (app-level activation)
-- 📜 **History panel** — last 50 notifications, open by clicking the tray icon
-- 🔀 **Session disambiguation** — uses `TERM_SESSION_ID`, `tmux`, and `ppid` to tell apart multiple sessions in the same cwd
-- 🧹 **Managed hook install** — installer/uninstaller edits `~/.claude/settings.json` safely
-- 🌍 **Minimal dependencies** — only Node.js required (no jq/curl or other external CLIs)
+- **Cards with the source**: kind (done / permission / waiting for input), project, git branch, the prompt you sent, a summary of the reply, how long it took, terminal app + tab (tty / tmux pane)
+- **Jump back in one click**: exact tab in iTerm2 and Terminal.app, tmux pane selection, app activation for VS Code, Cursor, Warp, Ghostty, JetBrains and more
+- **Stays until handled**: permission/input cards stick around (the pet waits next to you, hopping) and clear themselves once you answer in that session
+- Unread badge + menu-bar count, "working…" indicator, "while you were away" summary, live sessions panel, Do-Not-Disturb, optional system notifications
 
-### Requirements
+### Play
 
-| | Note |
-|---|---|
-| OS | macOS or Windows 10/11 |
-| Node.js 18+ | Runs Electron and the hook dispatcher |
-| Claude Code | The thing that fires the notifications |
+- **⌥⇧C / Alt+Shift+C** anywhere: the pet pops up right in front of your cursor (rebindable in Settings)
+- Pet it (rub the mouse back and forth), click it, drag and **throw** it, double-click for the play menu, right-click for the context menu
+- **Feed** (drop a cookie anywhere), **fetch** (kick the ball, it kicks it back), **Cookie Catch** (catch cookies, dodge bugs) and **Tag** mini games
+- Hunger / fun / energy drift over time; it comes to you when bored or hungry, sleeps when tired, and levels up as you play
 
-Check:
-```bash
-node -v        # v18.x or newer
-npm -v
-claude --version
-```
-
-### Install — macOS
-
-**1. Install Node.js**
-
-Via [Homebrew](https://brew.sh):
-```bash
-# If you don't have Homebrew
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-brew install node
-```
-
-Or the official installer: https://nodejs.org (LTS recommended).
-
-**2. Clone & run**
+### Install
 
 ```bash
 git clone https://github.com/ESeungJun/claude-bouncer.git
 cd claude-bouncer
-./start.command
+./start.command      # macOS (Windows: start.bat)
 ```
 
-You can also double-click `start.command` in Finder. First run installs dependencies and the hook automatically.
+Requires Node.js 18+. The first run installs dependencies and the Claude Code hooks. Build a standalone app with `npm run dist:mac` / `npm run dist:win`.
 
-> **Want no Terminal window?** See [Build a standalone app](#build-a-standalone-app) below — the `.app` bundle launches straight to a tray icon, no Terminal involved.
-
-### Build a standalone app
-
-Prefer a real `.app` / `.exe` over the source-mode launchers:
-
-```bash
-# macOS — .app + DMG + zip
-npm run dist:mac
-
-# Windows — NSIS installer (.exe)
-npm run dist:win
-
-# Fast unsigned pack for local testing (.app only)
-npm run pack
-```
-
-Output lands in `dist/`:
-- macOS: `dist/Claude Bouncer-<version>.dmg` or `dist/mac-arm64/Claude Bouncer.app`
-- Windows: `dist/Claude Bouncer Setup <version>.exe`
-
-Drop the `.app` into `/Applications` and double-click — only the tray icon appears, and the hook is rewritten to point at the bundle's internal path. Move the `.app` later? Just relaunch and the hook updates automatically. macOS may show a Gatekeeper warning on first launch — right-click → Open once and you're set.
-
-Manage the hook from the tray menu:
-- `Reinstall hook` — re-register (useful after moving the app)
-- `Uninstall hook` — remove from Claude Code settings
-
-### Install — Windows
-
-**1. Install Node.js**
-
-Download the LTS `.msi` from https://nodejs.org and run it. Make sure "Add to PATH" is checked during installation.
-
-Verify in PowerShell or cmd:
-```
-node -v
-npm -v
-```
-
-**2. Install Git (if needed)**
-
-https://git-scm.com/download/win
-
-**3. Clone & run**
-
-PowerShell or cmd:
-```
-git clone https://github.com/ESeungJun/claude-bouncer.git
-cd claude-bouncer
-start.bat
-```
-
-Or double-click `start.bat` in Explorer. Dependencies and the hook will be installed automatically on first run.
-
-> **Note**: Windows Defender SmartScreen may warn on first run. Click "More info" → "Run anyway" — it won't ask again.
-
-### Test it
-
-Once the app is running, look for the tray icon (macOS: top menu bar, Windows: system tray).
-
-- Right-click → **Test bounce** to verify the pet jumps
-- Run Claude Code in any terminal and wait for a response to finish
-
-### Usage
-
-- 🖱️ **Drag the pet** to reposition it
-- 🖱️ **Click the pet** to jump to the originating terminal
-- 🎭 **Click the tray icon** to toggle the history panel
-- **Right-click menu**:
-  - `Show panel` — open the history panel
-  - `Test bounce` — trigger a test animation
-  - `Quit` — quit the app
+Try it from the menu-bar icon → **테스트 알림 (Test notification)**.
 
 ### How it works
 
-1. The installer registers a `node send-notify.js` command in Claude Code's `Stop` and `Notification` hooks
-2. When a session stops or waits for input, the hook POSTs a JSON payload to `http://127.0.0.1:17891/notify`
-3. The app stores the entry in history and bounces the pet on whichever display currently has the cursor
-4. Clicking the pet activates the source terminal per-OS
-   - macOS: AppleScript (iTerm2 targets the exact session by `unique id`)
-   - Windows: PowerShell `AppActivate` raises the app window
+The app registers `Stop`, `Notification`, `UserPromptSubmit` and `SessionEnd` hooks in `~/.claude/settings.json` (only its own entries). The hook script adds terminal info (bundle id, tty, tmux pane) and POSTs to `127.0.0.1:17891`; it never blocks or fails a Claude turn. The app tracks every session, reads the last prompt/reply from the transcript, and draws the pet on a transparent full-screen overlay that only catches the mouse over the pet, cards and menus. The local server accepts JSON only and rejects requests that carry an `Origin` header.
 
-The hook uses only Node — no external CLIs like jq/curl — so installation is light and behavior is consistent across OSes.
+Uninstall the hooks with `npm run uninstall-hook`.
 
-### Uninstall
+### Development
 
-Remove the hook only:
 ```bash
-npm run uninstall-hook
+npm start          # run from source
+npm test           # unit tests (sessions, server, store, sprites)
+npm run sprites    # regenerate docs/sprite-sheet.png from sprites.js
 ```
 
-Full removal:
-```bash
-npm run uninstall-hook
-# then delete the project folder
-```
+### Credits
 
-### Troubleshooting
+Inspired by Shimeji, Desktop Goose, VPet and Tamagotchi, and by [clawd-on-desk](https://github.com/rullerzhou-afk/clawd-on-desk). Concept art and app icon made with Higgsfield; in-app sprites are hand-placed pixels in code. Font: [Galmuri](https://github.com/quiple/galmuri) (SIL OFL 1.1).
 
-**Pet doesn't appear?**
-- Check the tray for the icon, then try `Test bounce`
-- Verify `~/.claude/settings.json` contains a hook referencing `send-notify.js`
-
-**macOS: "Unidentified developer" warning**
-- Right-click `start.command` → Open once. It won't warn again.
-
-**Windows: SmartScreen warning**
-- Click "More info" → "Run anyway".
-
-**Port 17891 already in use**
-- macOS/Linux: `lsof -i :17891`
-- Windows: `netstat -ano | findstr :17891`
-- Kill the conflicting process and restart the app.
-
-**`node` command not found**
-- Verify Node.js is installed and on PATH. On Windows, re-run the installer with "Add to PATH" checked.
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE)
+MIT © ESeungjun

@@ -1,0 +1,33 @@
+@font-face {
+  font-family: 'Galmuri11';
+  src: url('fonts/Galmuri11.woff2') format('woff2');
+  font-weight: normal;
+}
+@font-face {
+  font-family: 'Galmuri11';
+  src: url('fonts/Galmuri11-Bold.woff2') format('woff2');
+  font-weight: bold;
+}
+@font-face {
+  font-family: 'Galmuri9';
+  src: url('fonts/Galmuri9.woff2') format('woff2');
+}
+
+:root {
+  --ink: #2a1612;
+  --paper: #fffaf2;
+  --paper-2: #f4ebdd;
+  --muted: #8b7b70;
+  --clay: #d97757;
+  --clay-dark: #8a361d;
+  --done: #2f9e62;
+  --need: #e5484d;
+  --wait: #e59a16;
+  --info: #7a5af5;
+  --px: 'Galmuri11', ui-rounded, -apple-system, sans-serif;
+  --px-small: 'Galmuri9', 'Galmuri11', -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+.px { image-rendering: pixelated; image-rendering: crisp-edges; }
