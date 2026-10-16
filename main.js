@@ -8,9 +8,12 @@ const fs = require('fs')
 const { installClaudeHook, hookScriptPath } = require('./scripts/install-hook')
 const { SessionTracker } = require('./lib/sessions')
 const { JsonStore } = require('./lib/store')
-const { focusTerminal } = require('./lib/focus')
+const { focusTerminal, activateApp } = require('./lib/focus')
 const { startServer, commandQueue, PORT } = require('./lib/server')
-const { Higgsfield, MODELS, DEFAULT_MODEL, PROMPT } = require('./lib/higgsfield')
+const { Higgsfield, MODELS, DEFAULT_MODEL } = require('./lib/higgsfield')
+const { PRESETS, presetLoader, validSkin, resolveSkin } = require('./lib/skins')
+const { requestSender } = require('./lib/request')
+const { actionMenuItems } = require('./lib/actions')
 const { HiggsfieldMcp } = require('./lib/higgsfield-mcp')
 
 const IS_MAC = process.platform === 'darwin'
@@ -51,16 +54,20 @@ const DEFAULTS = {
 }
 const SKINS_MAX = 8
 
-let store, historyStore, tracker
+let store, historyStore, skinsStore, tracker
 let overlay = null
 let panel = null
 let tray = null
 let currentDisplayId = null
 let hotkeyOk = false
-let panelPinned = false
+let crashes = [] // overlay crash times (last minute)
+// Reasons the panel must stay open when it loses focus (photo maker on the
+// pet tab, the extension guide, the compose window, a file dialog, a login).
+// It auto-hides only when none is set.
+const panelPins = new Set()
 // claude.ai browser extension: last contact + pending "focus tab" commands
 const extCommands = commandQueue()
-const ext = { browser: '', seenAt: 0 }
+const ext = { browser: '', seenAt: 0, instances: new Map() } // instance → last seen
 const BROWSER_APPS = { 'Google Chrome': 'Google Chrome', 'Microsoft Edge': 'Microsoft Edge', Brave: 'Brave Browser', Opera: 'Opera', Vivaldi: 'Vivaldi', Chromium: 'Chromium', Chrome: 'Google Chrome' }
 
 // Resolve the hook script (send-notify.sh / .ps1) to a real, on-disk file. In a packaged build it sits
@@ -78,10 +85,24 @@ function openFolderSafely(p) {
   shell.openPath(p)
 }
 
-// The unpacked extension folder (inside app.asar.unpacked in a packaged build).
+// The claude.ai extension people load into their browser lives in the app's
+// data folder: a fresh copy of the bundled files plus token.json (the
+// extension authenticates with it). Refreshed on every launch.
 function extensionFolder() {
-  return path.join(__dirname, 'extension')
-    .replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`)
+  return path.join(app.getPath('userData'), 'claude-ai-extension')
+}
+
+function prepareExtension(token) {
+  try {
+    const src = path.join(__dirname, 'extension')
+      .replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`)
+    const dst = extensionFolder()
+    fs.mkdirSync(dst, { recursive: true })
+    for (const f of fs.readdirSync(src)) fs.copyFileSync(path.join(src, f), path.join(dst, f))
+    fs.writeFileSync(path.join(dst, 'token.json'), JSON.stringify({ token }), { mode: 0o600 })
+  } catch (e) {
+    console.error('[claude-bouncer] could not prepare the browser extension:', e.message)
+  }
 }
 
 function sendNotifyPath() {
@@ -100,6 +121,19 @@ function hookToken() {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, t, { mode: 0o600 })
   return t
+}
+
+// hookToken() wrapper: an unwritable ~/.claude (e.g. created by sudo) must not
+// stop the app from starting — fall back to an in-memory token and say so.
+function safeHookToken() {
+  try {
+    const t = hookToken()
+    try { fs.chmodSync(path.join(os.homedir(), '.claude', 'claude-bouncer.token'), 0o600) } catch {}
+    return t
+  } catch (e) {
+    console.error('[claude-bouncer] cannot write ~/.claude/claude-bouncer.token:', e.message)
+    return require('crypto').randomBytes(24).toString('hex')
+  }
 }
 
 function syncHook({ uninstall = false } = {}) {
@@ -163,7 +197,15 @@ function createOverlay() {
   overlay.once('ready-to-show', () => overlay.showInactive())
   overlay.webContents.on('render-process-gone', (_, d) => {
     console.error('[claude-bouncer] overlay crashed:', d.reason)
-    setTimeout(() => { overlay?.destroy(); createOverlay() }, 1000)
+    if (app.isQuitting || d.reason === 'clean-exit') return
+    crashes = crashes.filter(t => Date.now() - t < 60000).concat(Date.now())
+    if (crashes.length > 3) {
+      // keeps crashing: go back to the classic look; stop retrying after a few more
+      skinsStore.data.active = ''
+      skinsStore.save()
+      if (crashes.length > 5) return
+    }
+    setTimeout(() => { if (!app.isQuitting) { overlay?.destroy(); createOverlay() } }, 1000 * crashes.length)
   })
 }
 
@@ -177,7 +219,11 @@ function moveOverlayTo(display, { reason = 'follow' } = {}) {
     overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
     overlay.setAlwaysOnTop(true, 'screen-saver')
   }
-  send(overlay, 'display', { width: display.workArea.width, height: display.workArea.height, reason })
+  const c = screen.getCursorScreenPoint()
+  send(overlay, 'display', {
+    width: display.workArea.width, height: display.workArea.height, reason,
+    cursor: { x: c.x - display.workArea.x, y: c.y - display.workArea.y },
+  })
   return true
 }
 
@@ -207,11 +253,12 @@ function createPanel() {
   })
   panel.loadFile(path.join('renderer', 'panel.html'))
   panel.on('close', (e) => { if (!app.isQuitting) { e.preventDefault(); panel.hide() } })
-  panel.on('blur', () => { if (!panelPinned && !panel.webContents.isDevToolsOpened()) panel.hide() })
+  panel.on('blur', () => { if (!panelPins.size && !panel.webContents.isDevToolsOpened()) panel.hide() })
 }
 
 function showPanel(tab) {
   if (!panel) return
+  if (panel.isVisible() && panel.isFocused()) { if (tab) send(panel, 'panel-tab', tab); return }
   const cursor = screen.getCursorScreenPoint()
   const { x, y, width, height } = screen.getDisplayNearestPoint(cursor).workArea
   const [w, h] = panel.getSize()
@@ -223,8 +270,10 @@ function showPanel(tab) {
   panel.focus()
 }
 
+// Open (or bring forward) the panel. It only closes when it's already the
+// window you're looking at — a panel hidden behind other windows reopens.
 function togglePanel(tab) {
-  if (panel?.isVisible()) panel.hide()
+  if (panel?.isVisible() && panel.isFocused() && !tab) panel.hide()
   else showPanel(tab)
 }
 
@@ -301,12 +350,12 @@ function showSystemNotification(n) {
 // claude.ai: ask the extension to bring the tab forward; if it isn't
 // listening, just open the conversation in the browser.
 function focusWebChat(t) {
-  // the extension re-polls every ≤25s while a claude.ai tab is open
-  const listening = Date.now() - ext.seenAt < 40000
+  // the browser that owns the tab re-polls every ≤25s while claude.ai is open
+  const listening = t.instance && Date.now() - (ext.instances.get(t.instance) || 0) < 40000
   if (listening && t.tabId != null) {
-    extCommands.push({ type: 'focus', tabId: t.tabId, windowId: t.windowId })
+    extCommands.push({ type: 'focus', tabId: t.tabId, windowId: t.windowId, url: t.url, instance: t.instance })
     const appName = BROWSER_APPS[t.browser]
-    if (IS_MAC && appName) require('child_process').execFile('osascript', ['-e', `tell application "${appName}" to activate`], () => {})
+    if (IS_MAC && appName) activateApp(appName)
   } else if (t.url) {
     shell.openExternal(t.url)
   }
@@ -374,25 +423,10 @@ function saveCreds(keyId, secret) {
 }
 
 // Built-in looks that work without Higgsfield (assets/presets/*.json).
-const PRESETS = [
-  { id: 'preset:cat', name: '고양이', file: 'cat.json' },
-  { id: 'preset:dog', name: '강아지', file: 'dog.json' },
-  { id: 'preset:onigiri', name: '주먹밥', file: 'onigiri.json' },
-]
-const presetCache = new Map()
-function presetSkin(id) {
-  const p = PRESETS.find(x => x.id === id)
-  if (!p) return null
-  if (!presetCache.has(id)) {
-    try { presetCache.set(id, JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'presets', p.file), 'utf8'))) } catch { presetCache.set(id, null) }
-  }
-  return presetCache.get(id)
-}
+const presetSkin = presetLoader(path.join(__dirname, 'assets', 'presets'))
 
 function activeSkin() {
-  const { list, active } = store.data.skins
-  if (active.startsWith('preset:')) return presetSkin(active)
-  return list.find(s => s.id === active)?.skin || null
+  return resolveSkin(skinsStore.data, presetSkin)
 }
 
 function broadcastSkin() {
@@ -407,10 +441,10 @@ function skinState() {
     credits: hfCredits,
     hasKey: !!c,
     keyId: c ? c.keyId.slice(0, 6) + '…' : '',
-    list: store.data.skins.list,
+    list: skinsStore.data.list,
     // names only; the (large, never-changing) pixel data comes once via skin:presets
     presets: PRESETS.filter(p => presetSkin(p.id)).map(p => ({ id: p.id, name: p.name })),
-    active: store.data.skins.active,
+    active: skinsStore.data.active,
     model: store.data.settings.skinModel,
     models: Object.keys(MODELS),
   }
@@ -454,46 +488,15 @@ async function generateSkin(file, style) {
 
 // JSON endpoint; FormSubmit only accepts posts that name a web page as their
 // source (Referer/Origin), otherwise it answers 200 with an error page.
-const REQUEST_TO = 'https://formsubmit.co/ajax/6951004@gmail.com'
-const REQUEST_FROM = 'https://github.com/ESeungJun/claude-bouncer'
-let lastRequestAt = 0
+const sendRequestMail = requestSender()
 
-async function sendRequest({ email, subject, message, photo, consent }) {
-  email = String(email || '').trim()
-  subject = String(subject || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 80) || '캐릭터 제작 요청'
-  message = String(message || '').trim().slice(0, 1000)
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('답장 받을 이메일을 확인해 주세요')
+function sendRequest({ email, subject, message, photo, consent }) {
   if (!photo) throw new Error('캐릭터로 만들 사진을 골라 주세요')
-  if (!consent) throw new Error('사진 전송에 동의해 주세요')
-  if (Date.now() - lastRequestAt < 60000) throw new Error('잠시 후 다시 보내 주세요')
-  const jpeg = preparePhoto(String(photo))
-  const form = new FormData()
-  form.append('_subject', `[Claude Bouncer] ${subject}`)
-  form.append('_template', 'table')
-  form.append('_captcha', 'false')
-  form.append('_replyto', email)
-  form.append('email', email)
-  form.append('message', message || '(메시지 없음)')
-  form.append('app', `claude-bouncer ${app.getVersion()} · ${process.platform}`)
-  form.append('attachment', new Blob([jpeg], { type: 'image/jpeg' }), 'photo.jpg')
-  const res = await fetch(REQUEST_TO, {
-    method: 'POST',
-    body: form,
-    headers: { Accept: 'application/json', Referer: REQUEST_FROM, Origin: 'https://github.com' },
+  return sendRequestMail({
+    email, subject, message, consent,
+    photoJpeg: preparePhoto(String(photo)),
+    app: `claude-bouncer ${app.getVersion()} · ${process.platform}`,
   })
-  if (!res.ok) throw new Error(`보내지 못했어요 (${res.status}). 잠시 후 다시 시도해 주세요`)
-  // FormSubmit answers 200 even when nothing was forwarded (not activated,
-  // rejected, …): only {"success":"true"} means it reached the inbox
-  let reply = null
-  try { reply = await res.json() } catch {}
-  if (String(reply?.success) !== 'true') {
-    console.error('[claude-bouncer] request not delivered:', String(reply?.message || 'no JSON reply').slice(0, 200))
-    throw new Error(/activat/i.test(reply?.message || '')
-      ? '요청 창구가 아직 준비 중이에요. 잠시 후 다시 시도해 주세요'
-      : '요청을 전달하지 못했어요. 잠시 후 다시 시도해 주세요')
-  }
-  lastRequestAt = Date.now()
-  return true
 }
 
 // ---------- summon hotkey ----------
@@ -548,10 +551,7 @@ function buildTrayMenu() {
     { label: '알림 · 세션 패널', click: () => showPanel('inbox') },
     { label: '펫 부르기', accelerator: hotkeyOk ? s.hotkey : undefined, registerAccelerator: false, click: summon },
     { type: 'separator' },
-    { label: '🍪 밥 주기', click: () => petAction('feed') },
-    { label: '⚽ 공놀이', click: () => petAction('ball') },
-    { label: '🎮 쿠키 받기 게임', click: () => petAction('game:catch') },
-    { label: '🏃 술래잡기 게임', click: () => petAction('game:tag') },
+    ...actionMenuItems(petAction),
     { type: 'separator' },
     { label: '방해 금지', type: 'checkbox', checked: s.dnd, click: (i) => setSetting('dnd', i.checked) },
     { label: '돌아다니기', type: 'checkbox', checked: s.roam, click: (i) => setSetting('roam', i.checked) },
@@ -665,13 +665,21 @@ function registerIpc() {
     port: PORT,
     ...snapshot(),
   }))
+  // sent synchronously from the overlay's beforeunload, so it lands before we exit
+  ipcMain.on('pet:save-now', (e, pet) => {
+    if (pet && typeof pet === 'object') {
+      store.data.pet = { ...store.data.pet, ...pet, best: { ...store.data.pet.best, ...(pet.best || {}) } }
+      store.flush()
+    }
+    e.returnValue = true
+  })
   ipcMain.handle('pet:save', (_, pet) => {
     if (!pet || typeof pet !== 'object') return
     store.data.pet = { ...store.data.pet, ...pet, best: { ...store.data.pet.best, ...(pet.best || {}) } }
     store.save()
     send(panel, 'pet', store.data.pet)
   })
-  ipcMain.handle('settings:set', (_, key, value) => setSetting(key, value))
+  ipcMain.handle('settings:set', (_, key, value) => ({ ...setSetting(key, value), hotkeyOk }))
 
   ipcMain.on('mouse:ignore', (_, ignore) => {
     if (!overlay || overlay.isDestroyed()) return
@@ -706,20 +714,24 @@ function registerIpc() {
   ipcMain.handle('hook:reinstall', () => !!syncHook())
 
   // custom looks
-  ipcMain.handle('panel:pin', (_, pinned) => { panelPinned = !!pinned })
+  ipcMain.handle('panel:pin', (_, pinned, reason) => {
+    const r = String(reason || 'maker').slice(0, 20)
+    if (pinned) panelPins.add(r); else panelPins.delete(r)
+  })
   ipcMain.handle('skin:state', () => skinState())
   ipcMain.handle('skin:presets', () => Object.fromEntries(PRESETS.map(p => [p.id, presetSkin(p.id)]).filter(([, s]) => s)))
   ipcMain.handle('request:send', async (_, form) => {
     try { await sendRequest(form || {}); return { ok: true } } catch (e) { return { error: e.message } }
   })
   ipcMain.handle('skin:mcp-login', async () => {
-    panelPinned = true
+    panelPins.add('login')
     try {
       hfCredits = await mcp().login()
       return { ...skinState() }
     } catch (e) {
       return { ...skinState(), error: e.message }
     } finally {
+      panelPins.delete('login')
       panel?.show()
     }
   })
@@ -730,16 +742,16 @@ function registerIpc() {
     }
     return skinState()
   })
-  ipcMain.handle('skin:estimate', async () => {
+  ipcMain.handle('skin:estimate', async (_, style) => {
     if (!mcp().signedIn) return null
-    try { return await mcp().estimate(PROMPT, 2) } catch { return null }
+    try { return await mcp().estimate(style === 'claudy' ? 'claudy' : 'pixel', 2) } catch { return null }
   })
   ipcMain.handle('skin:set-key', (_, keyId, secret) => {
     try { saveCreds(String(keyId || '').trim(), String(secret || '').trim()) } catch (e) { return { ...skinState(), error: e.message } }
     return skinState()
   })
   ipcMain.handle('skin:pick-photo', async () => {
-    panelPinned = true
+    panelPins.add('dialog')
     try {
       const r = await dialog.showOpenDialog(panel, {
         title: '내 사진 고르기',
@@ -748,6 +760,7 @@ function registerIpc() {
       })
       return r.canceled ? null : r.filePaths[0]
     } finally {
+      panelPins.delete('dialog')
       panel?.show()
     }
   })
@@ -758,38 +771,35 @@ function registerIpc() {
     try { return { images: await generateSkin(String(file), style === 'claudy' ? 'claudy' : 'pixel') } } catch (e) { return { error: e.message } }
   })
   ipcMain.handle('skin:save', (_, skin, name) => {
-    const valid = skin && (Array.isArray(skin.texture) || (skin.type === 'sheet' && skin.frames?.idle))
-    if (!valid) return skinState()
+    if (!validSkin(skin)) return skinState()
     const id = Date.now().toString(36)
-    const list = store.data.skins.list
+    const list = skinsStore.data.list
     list.unshift({ id, name: String(name || '내 클로디').slice(0, 20), createdAt: Date.now(), skin })
     if (list.length > SKINS_MAX) list.length = SKINS_MAX
-    store.data.skins.active = id
-    store.save()
+    skinsStore.data.active = id
+    skinsStore.save()
     broadcastSkin()
     return skinState()
   })
   ipcMain.handle('skin:use', (_, id) => {
-    const ok = !id || store.data.skins.list.some(s => s.id === id) || !!presetSkin(id)
-    if (ok) { store.data.skins.active = id || ''; store.save(); broadcastSkin() }
+    const ok = !id || skinsStore.data.list.some(s => s.id === id) || !!presetSkin(id)
+    if (ok) { skinsStore.data.active = id || ''; skinsStore.save(); broadcastSkin() }
     return skinState()
   })
   ipcMain.handle('skin:delete', (_, id) => {
-    store.data.skins.list = store.data.skins.list.filter(s => s.id !== id)
-    if (store.data.skins.active === id) store.data.skins.active = ''
-    store.save()
-    broadcastSkin()
+    skinsStore.data.list = skinsStore.data.list.filter(s => s.id !== id)
+    const wasActive = skinsStore.data.active === id
+    if (wasActive) skinsStore.data.active = ''
+    skinsStore.save()
+    if (wasActive) broadcastSkin()
+    else send(panel, 'skins', skinState())
     return skinState()
   })
 
   ipcMain.on('menu:pet', () => {
     const s = store.data.settings
     Menu.buildFromTemplate([
-      { label: '🍪 밥 주기', click: () => petAction('feed') },
-      { label: '⚽ 공놀이', click: () => petAction('ball') },
-      { label: '🎮 쿠키 받기 게임', click: () => petAction('game:catch') },
-      { label: '🏃 술래잡기 게임', click: () => petAction('game:tag') },
-      { label: '💤 재우기', click: () => petAction('sleep') },
+      ...actionMenuItems(petAction, { includeMenuOnly: true }),
       { type: 'separator' },
       { label: '알림 · 세션 패널', click: () => showPanel('inbox') },
       { label: '펫 상태', click: () => showPanel('pet') },
@@ -807,6 +817,13 @@ app.whenReady().then(() => {
   if (IS_MAC && app.dock) app.dock.hide()
 
   store = new JsonStore(path.join(app.getPath('userData'), 'state.json'), DEFAULTS)
+  skinsStore = new JsonStore(path.join(app.getPath('userData'), 'skins.json'), { list: [], active: '' })
+  // one-time move of looks saved inside state.json by earlier versions
+  if (store.data.skins.list.length && !skinsStore.data.list.length) {
+    skinsStore.data = { ...store.data.skins }
+    skinsStore.flush()
+  }
+  store.data.skins = { list: [], active: '' }
   historyStore = new JsonStore(path.join(app.getPath('userData'), 'history-v2.json'), { items: [] })
   tracker = new SessionTracker({ history: historyStore.data.items })
   if (!store.data.pet.bornAt) { store.data.pet.bornAt = Date.now(); store.save() }
@@ -819,12 +836,15 @@ app.whenReady().then(() => {
   registerHotkey()
   createTray()
   startFeeds()
+  const token = safeHookToken()
+  prepareExtension(token)
   startServer({
-    token: hookToken(),
+    token,
     onEvent: onHookEvent,
     commands: extCommands,
     onHello: (d) => {
       ext.seenAt = Date.now()
+      if (d?.instance) ext.instances.set(d.instance, Date.now())
       if (typeof d?.browser === 'string') ext.browser = d.browser.slice(0, 40)
     },
   })
@@ -854,4 +874,11 @@ app.on('before-quit', () => {
   app.isQuitting = true
   store?.flush()
   historyStore?.flush()
+  skinsStore?.flush()
+})
+// windows have closed by now (their last saves arrived): write again
+app.on('will-quit', () => {
+  store?.flush()
+  historyStore?.flush()
+  skinsStore?.flush()
 })

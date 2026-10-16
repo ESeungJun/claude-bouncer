@@ -130,7 +130,7 @@ claude.ai 웹 채팅은 Claude Code 훅이 없어서, 작은 브라우저 확장
 
 Chrome · Edge · Brave · Arc 등 크로미움 브라우저에서 동작해요.
 
-1. ⚙ 설정 → **claude.ai 웹 연결** → **설치 방법**을 누르면 `extension` 폴더가 열려요.
+1. ⚙ 설정 → **claude.ai 웹 연결** → **설치 방법** → **📁 확장 폴더 열기**. 앱이 접속 토큰을 넣은 확장 사본을 앱 데이터 폴더에 만들어 두니, 그 폴더를 불러오면 돼요.
 2. 주소창에 `chrome://extensions` (Edge는 `edge://extensions`) → 오른쪽 위 **개발자 모드** 켜기
 3. **압축해제된 확장 프로그램을 로드합니다** → `extension` 폴더 선택 → claude.ai 탭 새로고침
 
@@ -241,6 +241,12 @@ npm test           # 단위 테스트: 세션, 서버, 저장소, 스프라이�
 npm run sprites    # docs/sprite-sheet.png 다시 만들기
 npm run template   # assets/skin-template.png 다시 만들기 (Higgsfield에 보내는 템플릿)
 ```
+
+### 릴리스
+
+- `master`는 개발용이에요. 모든 변경은 PR로 들어가요.
+- `release`는 배포용이에요. 릴리스하려면 master에서 `package.json`의 `version`을 올리고, **master → release** PR을 만들어 머지해요.
+- 머지되면 [`.github/workflows/release.yml`](.github/workflows/release.yml)이 돌아요: 테스트 → `v<버전>` **임시 저장(draft) 릴리스** 생성 → macOS(Apple Silicon · Intel) · Windows 설치 파일 첨부. 확인한 뒤 *Publish release*를 누르면 공개돼요. 이미 공개된 버전은 절대 덮어쓰지 않아요.
 
 ```
 main.js                 앱 생명주기, 오버레이 · 패널 창, 트레이, IPC, 단축키

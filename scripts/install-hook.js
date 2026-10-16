@@ -98,11 +98,15 @@ function installClaudeHook({ sendNotifyPath, platform = process.platform, uninst
   const before = fs.existsSync(settingsPath) ? fs.readFileSync(settingsPath, 'utf8') : ''
   const after = JSON.stringify(settings, null, 2) + '\n'
   if (before !== after) {
-    // write-then-rename so a crash can never leave a half-written settings.json
+    // write-then-rename so a crash can never leave a half-written settings.json;
+    // follow a symlink (dotfiles setups) and keep the file's permissions
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
-    const tmp = `${settingsPath}.claude-bouncer-${process.pid}.tmp`
-    fs.writeFileSync(tmp, after)
-    fs.renameSync(tmp, settingsPath)
+    let target = settingsPath
+    let mode = 0o644
+    try { target = fs.realpathSync(settingsPath); mode = fs.statSync(target).mode & 0o777 } catch {}
+    const tmp = `${target}.claude-bouncer-${process.pid}.tmp`
+    fs.writeFileSync(tmp, after, { mode })
+    fs.renameSync(tmp, target)
   }
 
   return {
