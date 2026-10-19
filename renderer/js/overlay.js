@@ -267,14 +267,14 @@
       if (world.settings.dnd) return
       const n = notify.pending.length
       if (pet.act?.name === 'sleep') pet.act.dur = 0
-      pet.approachUser({
-        then: () => {
-          if (n) {
-            pet.wave(3, `자리 비운 사이 알림 ${n}개 왔어!`)
-            notify.expand()
-          } else pet.wave(2.4, pick(Pet.LINES.welcome))
-        },
-      })
+      const greet = () => {
+        if (n) {
+          pet.wave(3, `자리 비운 사이 알림 ${n}개 왔어!`)
+          notify.expand()
+        } else pet.wave(2.4, pick(Pet.LINES.welcome))
+      }
+      if (world.settings.roam) pet.approachUser({ then: greet })
+      else greet()
     }
   })
 
@@ -292,7 +292,8 @@
       if (need) pet.attend({ dur: 6, hopEvery: 1.6, expr: 'wide' })
       else pet.celebrate(1.6, { emote: 'star' })
     }
-    if (world.cursor.inside) pet.approachUser({ run: true, then: arrive, giveUp: 6 })
+    // roaming off: alert from where it stands instead of running to the cursor
+    if (world.settings.roam && world.cursor.inside) pet.approachUser({ run: true, then: arrive, giveUp: 6 })
     else arrive()
   })
 
