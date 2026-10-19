@@ -127,7 +127,7 @@ npm run dist:win   # NSIS 설치파일
 npm run pack       # 빠른 테스트용 .app
 ```
 
-결과물은 `dist/`에 생겨요. `.app`을 다른 곳으로 옮겨도 실행할 때마다 훅 경로가 자동으로 갱신돼요. 처음 실행할 때 macOS가 막으면 우클릭 → 열기, Windows SmartScreen이 막으면 "추가 정보 → 실행"을 눌러주세요.
+결과물은 `dist/`에 생겨요. `.app`을 다른 곳으로 옮겨도 실행할 때마다 훅 경로가 자동으로 갱신돼요. 처음 실행할 때 macOS가 막으면 위 [설치](#설치)의 **macOS 첫 실행**을 따라 하고, Windows SmartScreen이 막으면 "추가 정보 → 실행"을 눌러주세요.
 
 </details>
 
