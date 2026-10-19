@@ -1,6 +1,6 @@
 const {
   app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, shell, dialog,
-  Notification, powerMonitor, globalShortcut, safeStorage,
+  Notification, powerMonitor, globalShortcut, safeStorage, net,
 } = require('electron')
 const path = require('path')
 const os = require('os')
@@ -15,6 +15,7 @@ const { PRESETS, presetLoader, validSkin, resolveSkin } = require('./lib/skins')
 const { requestSender } = require('./lib/request')
 const { actionMenuItems } = require('./lib/actions')
 const { HiggsfieldMcp } = require('./lib/higgsfield-mcp')
+const { checkForUpdate, releasePage } = require('./lib/update')
 
 const IS_MAC = process.platform === 'darwin'
 
@@ -51,6 +52,8 @@ const DEFAULTS = {
   },
   // looks made from photos; active = '' means the classic orange Claude
   skins: { list: [], active: '' },
+  // last version we told the user about, so each release is announced once
+  update: { notified: '' },
 }
 const SKINS_MAX = 8
 
@@ -549,6 +552,7 @@ function buildTrayMenu() {
   if (!tray) return
   const s = store.data.settings
   const menu = Menu.buildFromTemplate([
+    ...(update.latest ? [{ label: `⬆ 새 버전 v${update.latest} 받기`, click: openUpdatePage }, { type: 'separator' }] : []),
     { label: '알림 · 세션 패널', click: () => showPanel('inbox') },
     { label: '펫 부르기', accelerator: hotkeyOk ? s.hotkey : undefined, registerAccelerator: false, click: summon },
     { type: 'separator' },
@@ -592,6 +596,7 @@ function buildTrayMenu() {
         },
       ],
     },
+    { label: `업데이트 확인 (v${app.getVersion()})`, click: () => runUpdateCheck({ manual: true }) },
     { type: 'separator' },
     { label: '클로디 종료', click: () => { app.isQuitting = true; app.quit() } },
   ])
@@ -624,6 +629,69 @@ function setSetting(key, value) {
   }
   broadcastSettings()
   return store.data.settings
+}
+
+// ---------- update check ----------
+
+// latest: a newer published version, or null; error: the last check failed
+let update = { latest: null, checking: false, error: false, checked: false }
+let updateNotice = null // keep a reference so 'click' survives GC
+
+function updateState() {
+  return { current: app.getVersion(), latest: update.latest, checking: update.checking, error: update.error, checked: update.checked }
+}
+
+function openUpdatePage() {
+  shell.openExternal(releasePage(update.latest))
+}
+
+// one request at a time; a click during a background check waits for it
+let updateRun = null
+function fetchUpdate() {
+  if (updateRun) return updateRun
+  update.checking = true
+  send(panel, 'update', updateState())
+  updateRun = checkForUpdate(app.getVersion(), { fetchImpl: net.fetch })
+    .then((r) => { update = { latest: r.newer ? r.latest : null, checking: false, error: false, checked: true } })
+    .catch((e) => {
+      console.error('[claude-bouncer] update check failed:', e.message)
+      update = { ...update, checking: false, error: true, checked: true }
+    })
+    .finally(() => {
+      updateRun = null
+      buildTrayMenu()
+      send(panel, 'update', updateState())
+    })
+  return updateRun
+}
+
+async function runUpdateCheck({ manual = false } = {}) {
+  await fetchUpdate()
+  if (manual) {
+    const found = update.latest && !update.error
+    const { response } = await dialog.showMessageBox({
+      type: update.error ? 'error' : 'info',
+      message: update.error ? '업데이트를 확인하지 못했어요.'
+        : found ? `새 버전이 나왔어요: v${update.latest}` : `최신 버전이에요 (v${app.getVersion()}).`,
+      detail: update.error ? '인터넷 연결을 확인하고 다시 시도해 주세요.' : undefined,
+      buttons: found ? ['나중에', '다운로드 페이지 열기'] : ['확인'],
+      defaultId: found ? 1 : 0,
+    })
+    if (found && response === 1) openUpdatePage()
+  } else if (update.latest && store.data.update.notified !== update.latest && !store.data.settings.dnd && Notification.isSupported()) {
+    // announced once per version; under Do Not Disturb it waits for a later check
+    store.data.update.notified = update.latest
+    store.save()
+    updateNotice = new Notification({ title: 'Claude Bouncer 새 버전', body: `v${update.latest} — 눌러서 다운로드 페이지를 열어요.`, silent: true })
+    updateNotice.on('click', openUpdatePage)
+    updateNotice.show()
+  }
+  return updateState()
+}
+
+function startUpdateChecks() {
+  setTimeout(() => runUpdateCheck(), 15 * 1000)
+  setInterval(() => runUpdateCheck(), 6 * 60 * 60 * 1000)
 }
 
 // ---------- cursor / idle feed for the pet ----------
@@ -664,8 +732,11 @@ function registerIpc() {
     pet: store.data.pet,
     platform: process.platform,
     port: PORT,
+    update: updateState(),
     ...snapshot(),
   }))
+  ipcMain.handle('update:check', () => runUpdateCheck())
+  ipcMain.handle('update:open', () => { if (update.latest) openUpdatePage() })
   // sent synchronously from the overlay's beforeunload, so it lands before we exit
   ipcMain.on('pet:save-now', (e, pet) => {
     if (pet && typeof pet === 'object') {
@@ -837,6 +908,7 @@ app.whenReady().then(() => {
   registerHotkey()
   createTray()
   startFeeds()
+  startUpdateChecks()
   const token = safeHookToken()
   prepareExtension(token)
   startServer({
