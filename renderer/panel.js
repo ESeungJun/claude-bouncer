@@ -285,6 +285,30 @@
     setTimeout(() => { $('#reinstall').textContent = '다시 설치' }, 2000)
   })
 
+  // ---------- update ----------
+
+  let update = {}
+  function renderUpdate() {
+    const st = $('#update-status')
+    const b = $('#update-btn')
+    st.classList.remove('err', 'ok')
+    if (update.checking) { st.textContent = '확인하는 중…'; b.textContent = '확인'; b.disabled = true; return }
+    b.disabled = false
+    if (update.latest) {
+      st.textContent = `새 버전 v${update.latest} 있어요 (지금 v${update.current})`
+      st.classList.add('ok')
+      b.textContent = '받기'
+    } else {
+      st.textContent = update.error ? '확인하지 못했어요 — 인터넷 연결을 확인해 주세요' : update.checked ? `지금 v${update.current} · 최신 버전이에요` : `지금 v${update.current}`
+      if (update.error) st.classList.add('err')
+      b.textContent = '확인'
+    }
+  }
+  $('#update-btn').addEventListener('click', async () => {
+    if (update.latest) api.openUpdate()
+    else { update = await api.checkUpdate(); renderUpdate() }
+  })
+
   // ---------- wiring ----------
 
   function renderLogo() { Sprites.blit($('#logo'), Sprites.petCanvas({ expr: 'happy', mouth: 'smile' }), 2) }
@@ -295,6 +319,8 @@
   const state = await api.getState()
   settings = { ...state.settings, hotkeyOk: state.hotkeyOk }
   pet = state.pet
+  update = state.update
+  renderUpdate()
   const h = await api.getHistory()
   data = h
   renderInbox(); renderSessions(); renderPet(); renderSettings()
@@ -307,5 +333,6 @@
   })
   api.onSettings((s) => { settings = s; renderSettings() })
   api.onPet((p) => { pet = p; renderPet() })
+  api.onUpdate((u) => { update = u; renderUpdate() })
   setInterval(renderSessions, 30000)
 })()

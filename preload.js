@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('api', {
   onSkin: on('skin'),
   onSkins: on('skins'),
   onSkinProgress: on('skin-progress'),
+  onUpdate: on('update'),
 
   // state
   getState: () => ipcRenderer.invoke('state:get'),
@@ -49,6 +50,8 @@ contextBridge.exposeInMainWorld('api', {
   openExtensionFolder: () => ipcRenderer.invoke('ext:open-folder'),
   testNotify: (kind) => ipcRenderer.invoke('test-notify', kind),
   reinstallHook: () => ipcRenderer.invoke('hook:reinstall'),
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  openUpdate: () => ipcRenderer.invoke('update:open'),
   pauseHotkey: (paused) => ipcRenderer.invoke('hotkey:pause', !!paused),
 
   // custom looks
