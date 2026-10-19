@@ -121,7 +121,7 @@ npm run dist:win   # NSIS installer
 npm run pack       # quick unpacked .app for testing
 ```
 
-Output goes to `dist/`. Moving the `.app` is fine — the hook path is refreshed on every launch. If Gatekeeper blocks the first launch, right-click → Open. On Windows, SmartScreen → More info → Run anyway.
+Output goes to `dist/`. Moving the `.app` is fine — the hook path is refreshed on every launch. If macOS blocks the first launch, see [First launch on macOS](#install) above. On Windows, SmartScreen → More info → Run anyway.
 
 </details>
 
