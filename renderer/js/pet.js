@@ -472,7 +472,7 @@ window.CB = window.CB || {}
 
       // a notification is still waiting for an answer: stay close and keep nudging
       if (needsYou) {
-        if (this.distTo(w.cursor.x, w.cursor.y) > 260 && userActive) return this.approachUser({ then: () => this.attend({ dur: 4, hopEvery: 2, expr: 'wide' }) })
+        if (w.settings.roam && this.distTo(w.cursor.x, w.cursor.y) > 260 && userActive) return this.approachUser({ then: () => this.attend({ dur: 4, hopEvery: 2, expr: 'wide' }) })
         return this.attend({ dur: 5, hopEvery: 2.5, expr: 'wide' })
       }
 

@@ -121,7 +121,7 @@ npm run dist:win   # NSIS installer
 npm run pack       # quick unpacked .app for testing
 ```
 
-Output goes to `dist/`. Moving the `.app` is fine — the hook path is refreshed on every launch. If Gatekeeper blocks the first launch, right-click → Open. On Windows, SmartScreen → More info → Run anyway.
+Output goes to `dist/`. Moving the `.app` is fine — the hook path is refreshed on every launch. If macOS blocks the first launch, see [First launch on macOS](#install) above. On Windows, SmartScreen → More info → Run anyway.
 
 </details>
 
@@ -138,7 +138,7 @@ Output goes to `dist/`. Moving the `.app` is fine — the hook path is refreshed
 | <kbd>⌥</kbd><kbd>⇧</kbd><kbd>C</kbd> | Summon to your cursor (press again to close the cards) |
 | Menu-bar icon | Panel, summon, play, Do Not Disturb, roaming, test notifications, hook management |
 
-**Panel tabs:** 🔔 Inbox · 🖥 Sessions · 🐾 Pet (stats, actions, custom look) · ⚙ Settings (size, roaming, sound, system notifications, Do Not Disturb, launch at login, summon hotkey)
+**Panel tabs:** 🔔 Inbox · 🖥 Sessions · 🐾 Pet (stats, actions, custom look) · ⚙ Settings (size, roaming (off: the pet alerts from where it stands instead of running to your cursor), sound, system notifications, Do Not Disturb, launch at login, summon hotkey)
 
 ## claude.ai in the browser
 
