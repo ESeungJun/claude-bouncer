@@ -312,10 +312,11 @@ function onHookEvent(payload) {
     saveHistory()
     const quiet = store.data.settings.dnd
     if (!quiet) {
-      followCursorDisplay('notify')
+      // roaming off: the pet stays on its screen and spot, it only alerts there
+      if (store.data.settings.roam) followCursorDisplay('notify')
       raiseOverlay()
     }
-    // tiny delay so a display move settles before the pet starts running
+    // tiny delay so a display move (if any) settles before the pet reacts
     setTimeout(() => send(overlay, 'notify', notification), 60)
     if (store.data.settings.systemNotify && !quiet) showSystemNotification(notification)
   } else if (changed) {
