@@ -1,6 +1,6 @@
 // Things to do together: feeding, ball (fetch), and two mini games.
 //   - feed:  a snack sticks to the cursor; click anywhere to drop it
-//   - ball:  click the ball to kick it; the pet chases and kicks it back to you
+//   - ball:  soccer — kick the ball into the pet's goal, it aims at yours
 //   - catch: steer the pet with the mouse, catch cookies, dodge bugs (30s)
 //   - tag:   the pet runs around, click it as often as you can (20s)
 
@@ -11,6 +11,11 @@ window.CB = window.CB || {}
   const { rand, clamp, pick } = CB.util
 
   const el = CB.el
+
+  const WIN_GOALS = 3
+  const GOAL_W = 84 // mouth width
+  const GOAL_H = 46 // drawn height
+  const GOAL_DEPTH = 26 // how far up the screen the mouth reaches
 
   class Play {
     constructor(world, pet) {
@@ -121,7 +126,10 @@ window.CB = window.CB || {}
       it.el.style.transform = `translate3d(${it.x - w / 2}px, ${it.y - h - it.z}px, 0)`
     }
 
-    // ---------- ball ----------
+    // ---------- soccer ----------
+    // Two goals at random spots: kick the ball into Claudy's goal, Claudy
+    // dribbles it toward yours. First to WIN_GOALS wins; the goals move after
+    // every goal.
 
     startBall() {
       if (this.mode) this.stop()
@@ -130,11 +138,18 @@ window.CB = window.CB || {}
       const node = Sprites.itemElement('ball', s, 'item ball')
       node.dataset.hit = 'ball'
       const shadow = el('div', 'ball-shadow')
-      this.w.layer.append(shadow, node)
-      const p = this.pet
+      const goals = { me: this.goalElement('me'), pet: this.goalElement('pet') }
+      const hud = el('div', 'soccer-hud')
+      hud.dataset.hit = 'soccer'
+      const score = el('span', 's-score')
+      const close = el('button', 's-close', '×')
+      close.title = '그만하기'
+      close.addEventListener('click', (e) => { e.stopPropagation(); this.endBall(true) })
+      hud.append(score, close)
+      this.w.layer.append(goals.me.el, goals.pet.el, shadow, node, hud)
       this.ball = {
-        el: node, shadow, r: (7 * s) / 2,
-        x: clamp(p.x + 60, 30, this.w.w - 30), y: p.y, z: 120, vx: 0, vy: 0, vz: 0,
+        el: node, shadow, r: (7 * s) / 2, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
+        goals, hud, scoreEl: score, score: { me: 0, pet: 0 }, hold: 0,
         lastUserKick: this.t(), kicks: 0, // timers count from when the ball appears
       }
       node.addEventListener('mousedown', (e) => {
@@ -143,25 +158,55 @@ window.CB = window.CB || {}
         this.kickBall('user')
       })
       this.mode = 'ball'
-      p.say('공놀이 하자! 공을 클릭해서 차줘', 2600)
+      this.placeGoals()
+      this.renderScore()
+      this.pet.say(`축구하자! 공을 차서 내 골대에 넣어봐 (${WIN_GOALS}골 먼저)`, 3200)
       this.chase()
+    }
+
+    goalElement(side) {
+      const node = el('div', `goal goal-${side}`)
+      node.append(el('span', 'goal-label', side === 'me' ? '내 골대' : '클로디 골대'))
+      return { el: node, x: 0, y: 0 }
+    }
+
+    // random spots on the ground the pet can reach, far enough apart to play
+    placeGoals() {
+      const b = this.ball
+      const { w, h } = this.w
+      const minY = this.pet.ph + GOAL_H + 20
+      const spot = () => ({ x: rand(GOAL_W, w - GOAL_W), y: rand(minY, h - 30) })
+      const far = Math.min(w, h) * 0.5
+      let a = spot(), c = spot()
+      for (let i = 0; i < 40 && Math.hypot(a.x - c.x, a.y - c.y) < far; i++) c = spot()
+      for (const [g, p] of [[b.goals.me, a], [b.goals.pet, c]]) {
+        g.x = p.x; g.y = p.y
+        g.el.style.transform = `translate3d(${p.x - GOAL_W / 2}px, ${p.y - GOAL_H}px, 0)`
+      }
+      // kick-off from halfway between them, dropped from above
+      Object.assign(b, { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2, z: 120, vx: 0, vy: 0, vz: 0 })
+    }
+
+    renderScore() {
+      const b = this.ball
+      b.scoreEl.textContent = `나 ${b.score.me} : ${b.score.pet} 클로디`
     }
 
     kickBall(who) {
       const b = this.ball
-      if (!b) return
-      const w = this.w
+      if (!b || b.hold > 0) return
       let dx, dy, speed
       if (who === 'user') {
-        dx = b.x - w.cursor.x; dy = (b.y - b.z) - w.cursor.y
+        // the ball flies away from where you clicked it
+        dx = b.x - this.w.cursor.x; dy = (b.y - b.z) - this.w.cursor.y
         speed = rand(650, 900)
         b.lastUserKick = this.t()
         this.pet.boost({ fun: 2 })
       } else {
-        // pet kicks it back toward you (fetch!)
-        dx = w.cursor.x - b.x + rand(-60, 60); dy = w.cursor.y - b.y + rand(-40, 40)
+        // the pet aims at your goal, not always on target
+        const g = b.goals.me
+        dx = g.x - b.x + rand(-70, 70); dy = g.y - GOAL_H / 3 - b.y + rand(-40, 40)
         speed = rand(380, 560)
-        if (!w.cursor.inside) { dx = rand(-1, 1); dy = rand(-1, 1) }
         this.pet.boost({ fun: 3, xp: 1 })
       }
       const d = Math.hypot(dx, dy) || 1
@@ -183,7 +228,7 @@ window.CB = window.CB || {}
           const dx = tx - p.x, dy = b.y - p.y
           const d = Math.hypot(dx, dy)
           const ballSpeed = Math.hypot(b.vx, b.vy)
-          if (d < 10 && b.z < 14 && ballSpeed < 220) {
+          if (d < 10 && b.z < 14 && ballSpeed < 220 && !(b.hold > 0)) {
             this.kickBall('pet')
             p.hop(200)
             return false
@@ -204,23 +249,78 @@ window.CB = window.CB || {}
       })
     }
 
+    // which goal (if any) the ball is in: low enough and inside the mouth
+    goalHit() {
+      const b = this.ball
+      if (b.z > GOAL_H * 0.7) return null
+      for (const side of ['me', 'pet']) {
+        const g = b.goals[side]
+        if (Math.abs(b.x - g.x) < GOAL_W / 2 - b.r && b.y <= g.y && b.y >= g.y - GOAL_DEPTH) return side
+      }
+      return null
+    }
+
+    scored(side) {
+      const b = this.ball
+      // in your goal → a point for the pet, and the other way round
+      const scorer = side === 'me' ? 'pet' : 'me'
+      b.score[scorer]++
+      b.hold = 1.4
+      b.vx = b.vy = 0
+      this.renderScore()
+      b.goals[side].el.classList.add('scored')
+      setTimeout(() => b.goals[side].el.classList.remove('scored'), 900)
+      const p = this.pet
+      if (scorer === 'pet') {
+        Sound.play('done')
+        p.celebrate(1.2, { line: pick(['골이다!', '들어갔다!', '내가 넣었어!']), emote: 'star' })
+      } else {
+        Sound.play('catch')
+        p.sad(1.2, pick(['아앗, 먹혔다…', '막을 수 있었는데!', '나이스 골…']))
+      }
+      if (b.score[scorer] >= WIN_GOALS) setTimeout(() => { if (this.ball === b) this.finishSoccer(scorer) }, 1200)
+    }
+
+    finishSoccer(winner) {
+      const b = this.ball
+      const p = this.pet
+      p.boost({ fun: 20, energy: -5, xp: 5 + b.score.me * 2 })
+      Sound.play(winner === 'me' ? 'levelup' : 'end')
+      const line = winner === 'me' ? `${b.score.me}:${b.score.pet} 내가 졌다! 다음엔 이길 거야` : `${b.score.pet}:${b.score.me} 내가 이겼다!`
+      this.endBall(false)
+      p.boost({ played: 1 })
+      if (winner === 'me') p.sad(2.2, line)
+      else p.celebrate(2, { line, emote: 'heart' })
+      this.w.saveSoon()
+    }
+
     updateBall(dt) {
       const b = this.ball
       if (!b) return
-      b.x += b.vx * dt
-      b.y += b.vy * dt
-      const f = Math.pow(0.25, dt)
-      b.vx *= f; b.vy *= f
-      if (b.x < b.r || b.x > this.w.w - b.r) { b.vx *= -0.8; b.x = clamp(b.x, b.r, this.w.w - b.r) }
-      if (b.y < b.r * 2 + 20 || b.y > this.w.h - 4) { b.vy *= -0.8; b.y = clamp(b.y, b.r * 2 + 20, this.w.h - 4) }
-      if (b.z > 0 || b.vz) {
-        b.vz -= 1400 * dt
-        b.z += b.vz * dt
-        if (b.z <= 0) { b.z = 0; b.vz = Math.abs(b.vz) > 90 ? -b.vz * 0.5 : 0 }
+      if (b.hold > 0) {
+        // goal! pause, then kick off again from new goals
+        b.hold -= dt
+        if (b.hold <= 0 && Math.max(b.score.me, b.score.pet) < WIN_GOALS) this.placeGoals()
+      } else {
+        b.x += b.vx * dt
+        b.y += b.vy * dt
+        const f = Math.pow(0.25, dt)
+        b.vx *= f; b.vy *= f
+        if (b.x < b.r || b.x > this.w.w - b.r) { b.vx *= -0.8; b.x = clamp(b.x, b.r, this.w.w - b.r) }
+        if (b.y < b.r * 2 + 20 || b.y > this.w.h - 4) { b.vy *= -0.8; b.y = clamp(b.y, b.r * 2 + 20, this.w.h - 4) }
+        if (b.z > 0 || b.vz) {
+          b.vz -= 1400 * dt
+          b.z += b.vz * dt
+          if (b.z <= 0) { b.z = 0; b.vz = Math.abs(b.vz) > 90 ? -b.vz * 0.5 : 0 }
+        }
+        const side = this.goalHit()
+        if (side) this.scored(side)
       }
       const size = b.el.width
       b.el.style.transform = `translate3d(${b.x - size / 2}px, ${b.y - size - b.z}px, 0) rotate(${(b.x * 2) % 360}deg)`
       b.shadow.style.transform = `translate3d(${b.x - size / 2}px, ${b.y - 4}px, 0)`
+      // something else took the pet for a moment (a wave, a hop…): back to the ball
+      if (['idle', 'walk', 'sit'].includes(this.pet.act?.name)) this.chase()
       // 40s without a kick from you → the game winds down
       if (this.t() - b.lastUserKick > 40 && b.kicks > 0 || this.t() - b.lastUserKick > 60) this.endBall(true)
     }
@@ -228,7 +328,8 @@ window.CB = window.CB || {}
     endBall(talk) {
       const b = this.ball
       if (!b) return
-      b.el.remove(); b.shadow.remove()
+      b.el.remove(); b.shadow.remove(); b.hud.remove()
+      b.goals.me.el.remove(); b.goals.pet.el.remove()
       this.ball = null
       if (this.mode === 'ball') this.mode = null
       if (talk) {
