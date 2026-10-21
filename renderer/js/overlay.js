@@ -155,9 +155,24 @@
   let lastSample = null
   const strokes = { dir: 0, flips: 0, since: 0 }
 
+  // cursor speed (px/s), so the ball can be kicked by just swiping into it
+  function moveCursor(x, y) {
+    const c = world.cursor
+    const now = performance.now()
+    const dt = (now - (c.at || 0)) / 1000
+    // the same spot arrives twice (main's feed + the DOM event): not a stop
+    if (x === c.x && y === c.y && dt < 0.05) return
+    if (dt > 0 && dt < 0.2) {
+      c.vx = ((x - c.x) / dt) * 0.6 + (c.vx || 0) * 0.4
+      c.vy = ((y - c.y) / dt) * 0.6 + (c.vy || 0) * 0.4
+    } else if (dt >= 0.2) { c.vx = 0; c.vy = 0 }
+    if (dt > 0) c.at = now
+    c.x = x
+    c.y = y
+  }
+
   function cursorFromEvent(e) {
-    world.cursor.x = e.clientX
-    world.cursor.y = e.clientY
+    moveCursor(e.clientX, e.clientY)
     world.cursor.inside = true
   }
 
@@ -250,8 +265,7 @@
 
   api.onCursor((c) => {
     const moved = Math.abs(c.x - world.cursor.x) + Math.abs(c.y - world.cursor.y) > 2
-    world.cursor.x = c.x
-    world.cursor.y = c.y
+    moveCursor(c.x, c.y)
     world.cursor.inside = c.inside
     if (moved) world.cursor.movedAt = world.uptime
     if (!press) syncHit()
