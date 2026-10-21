@@ -1,6 +1,6 @@
 // Things to do together: feeding, ball (fetch), and two mini games.
 //   - feed:  a snack sticks to the cursor; click anywhere to drop it
-//   - ball:  soccer — kick the ball into the pet's goal, it aims at yours
+//   - ball:  soccer — swipe the cursor into the ball to kick it into the pet's goal
 //   - catch: steer the pet with the mouse, catch cookies, dodge bugs (30s)
 //   - tag:   the pet runs around, click it as often as you can (20s)
 
@@ -16,6 +16,7 @@ window.CB = window.CB || {}
   const GOAL_W = 84 // mouth width
   const GOAL_H = 46 // drawn height
   const GOAL_DEPTH = 26 // how far up the screen the mouth reaches
+  const FOOT_R = 8 // how close the cursor has to come to touch the ball
 
   class Play {
     constructor(world, pet) {
@@ -149,18 +150,14 @@ window.CB = window.CB || {}
       this.w.layer.append(goals.me.el, goals.pet.el, shadow, node, hud)
       this.ball = {
         el: node, shadow, r: (7 * s) / 2, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
-        goals, hud, scoreEl: score, score: { me: 0, pet: 0 }, hold: 0,
+        goals, hud, scoreEl: score, score: { me: 0, pet: 0 }, hold: 0, touchT: 0,
         lastUserKick: this.t(), kicks: 0, // timers count from when the ball appears
       }
-      node.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return
-        e.stopPropagation()
-        this.kickBall('user')
-      })
       this.mode = 'ball'
       this.placeGoals()
       this.renderScore()
-      this.pet.say(`축구하자! 공을 차서 내 골대에 넣어봐 (${WIN_GOALS}골 먼저)`, 3200)
+      this.foot = null
+      this.pet.say(`축구하자! 마우스로 공을 툭 차서 내 골대에 넣어봐 (${WIN_GOALS}골 먼저)`, 3400)
       this.chase()
     }
 
@@ -192,29 +189,64 @@ window.CB = window.CB || {}
       b.scoreEl.textContent = `나 ${b.score.me} : ${b.score.pet} 클로디`
     }
 
-    kickBall(who) {
+    // the pet aims at your goal, not always on target
+    kickBall() {
       const b = this.ball
       if (!b || b.hold > 0) return
-      let dx, dy, speed
-      if (who === 'user') {
-        // the ball flies away from where you clicked it
-        dx = b.x - this.w.cursor.x; dy = (b.y - b.z) - this.w.cursor.y
-        speed = rand(650, 900)
-        b.lastUserKick = this.t()
-        this.pet.boost({ fun: 2 })
-      } else {
-        // the pet aims at your goal, not always on target
-        const g = b.goals.me
-        dx = g.x - b.x + rand(-70, 70); dy = g.y - GOAL_H / 3 - b.y + rand(-40, 40)
-        speed = rand(380, 560)
-        this.pet.boost({ fun: 3, xp: 1 })
-      }
+      const g = b.goals.me
+      const dx = g.x - b.x + rand(-70, 70), dy = g.y - GOAL_H / 3 - b.y + rand(-40, 40)
       const d = Math.hypot(dx, dy) || 1
+      const speed = rand(380, 560)
       b.vx = (dx / d) * speed
       b.vy = (dy / d) * speed
       b.vz = rand(220, 380)
       b.kicks++
+      this.pet.boost({ fun: 3, xp: 1 })
       Sound.play('kick')
+    }
+
+    // The cursor is your foot: swipe into the ball to kick it that way (the
+    // faster, the harder); touch it slowly to just nudge it along.
+    footTouch(dt) {
+      const b = this.ball
+      const c = this.w.cursor
+      const prev = this.foot
+      this.foot = c.inside ? { x: c.x, y: c.y } : null
+      if (b.touchT > 0) b.touchT -= dt
+      if (!prev || !this.foot || b.hold > 0 || b.touchT > 0) return
+      // the drawn ball (lifted by its height); test the whole swipe since the
+      // last frame so a fast flick can't skip past it
+      const bx = b.x, by = b.y - b.r - b.z
+      const sx = c.x - prev.x, sy = c.y - prev.y
+      const len2 = sx * sx + sy * sy
+      const k = len2 ? clamp(((bx - prev.x) * sx + (by - prev.y) * sy) / len2, 0, 1) : 1
+      const hx = prev.x + sx * k, hy = prev.y + sy * k
+      const nx = bx - hx, ny = by - hy
+      const dist = Math.hypot(nx, ny)
+      if (dist > b.r + FOOT_R) return
+      const age = (performance.now() - (c.at || 0)) / 1000
+      const fx = age < 0.15 ? c.vx || 0 : 0, fy = age < 0.15 ? c.vy || 0 : 0
+      const footSpeed = Math.hypot(fx, fy)
+      const ux = dist ? nx / dist : 0, uy = dist ? ny / dist : -1
+      if (footSpeed > 150) {
+        // mostly where the foot was going, a little off the contact point
+        let dx = (fx / footSpeed) * 0.75 + ux * 0.25, dy = (fy / footSpeed) * 0.75 + uy * 0.25
+        const d = Math.hypot(dx, dy) || 1
+        const speed = clamp(footSpeed * 0.8, 260, 1000)
+        b.vx = (dx / d) * speed
+        b.vy = (dy / d) * speed
+        b.vz = clamp(footSpeed * 0.12, 60, 280)
+        b.touchT = 0.2
+        Sound.play('kick')
+        this.pet.boost({ fun: 2 })
+      } else {
+        // a slow touch just rolls it out of the way
+        b.vx = ux * 170
+        b.vy = uy * 170
+        b.touchT = 0.12
+      }
+      b.lastUserKick = this.t()
+      b.kicks++
     }
 
     chase() {
@@ -229,7 +261,7 @@ window.CB = window.CB || {}
           const d = Math.hypot(dx, dy)
           const ballSpeed = Math.hypot(b.vx, b.vy)
           if (d < 10 && b.z < 14 && ballSpeed < 220 && !(b.hold > 0)) {
-            this.kickBall('pet')
+            this.kickBall()
             p.hop(200)
             return false
           }
@@ -313,6 +345,7 @@ window.CB = window.CB || {}
           b.z += b.vz * dt
           if (b.z <= 0) { b.z = 0; b.vz = Math.abs(b.vz) > 90 ? -b.vz * 0.5 : 0 }
         }
+        this.footTouch(dt)
         const side = this.goalHit()
         if (side) this.scored(side)
       }
