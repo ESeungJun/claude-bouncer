@@ -8,7 +8,7 @@ const fs = require('fs')
 const { installClaudeHook, hookScriptPath } = require('./scripts/install-hook')
 const { SessionTracker } = require('./lib/sessions')
 const { JsonStore } = require('./lib/store')
-const { focusTerminal, activateApp } = require('./lib/focus')
+const { focusTerminal, activateApp, frontTerminal, isFrontTerminal } = require('./lib/focus')
 const { startServer, commandQueue, PORT } = require('./lib/server')
 const { Higgsfield, MODELS, DEFAULT_MODEL } = require('./lib/higgsfield')
 const { PRESETS, presetLoader, validSkin, resolveSkin } = require('./lib/skins')
@@ -299,6 +299,8 @@ function broadcastData() {
   send(overlay, 'data', snap)
   send(panel, 'data', { ...snap, history: tracker.history })
   updateTray(snap)
+  closeHandledSystemNotifications(snap.pending)
+  watchFront()
 }
 
 function broadcastSettings() {
@@ -351,6 +353,53 @@ function showSystemNotification(n) {
   if (liveNotifications.size > 50) liveNotifications.delete(liveNotifications.keys().next().value)
 }
 
+// a card answered anywhere takes its Notification Center entry with it
+function closeHandledSystemNotifications(pending) {
+  const live = new Set(pending.map(n => n.id))
+  for (const [id, sys] of liveNotifications) {
+    if (!live.has(id)) { liveNotifications.delete(id); sys.close() }
+  }
+}
+
+// Going to a session answers all of its cards, not just the one clicked.
+function settleSession(sessionId) {
+  if (tracker.settle(sessionId, { read: true })) { saveHistory(); broadcastData() }
+}
+
+// ---------- clear cards when you switch to their terminal yourself ----------
+// While terminal cards are pending, look at the frontmost terminal every 1.5s.
+// When it changes to one that has cards, those sessions are settled. Cards
+// that arrive while you're already looking at their terminal stay until you
+// come back to it (or answer it). A done card left unread for half an hour
+// no longer keeps the check running.
+
+const WATCH_DONE_MS = 30 * 60 * 1000
+
+let frontTimer = null
+let frontKey = '' // what was in front at the last look ('' = no look yet)
+let frontFirst = true
+
+function watchable(n) {
+  return !n.terminal?.web && (n.kind !== 'done' || Date.now() - n.ts < WATCH_DONE_MS)
+}
+
+function watchFront() {
+  if (frontTimer) return
+  if (!IS_MAC || !tracker.pending().some(watchable)) { frontKey = ''; frontFirst = true; return }
+  frontTimer = setTimeout(async () => {
+    const front = await frontTerminal()
+    const key = front ? [front.bundleId, front.session, front.tty].join('|') : ''
+    if (frontKey && key && key !== frontKey) {
+      const hit = tracker.pending().filter(n => watchable(n) && isFrontTerminal(n.terminal, front))
+      for (const id of new Set(hit.map(n => n.sessionId))) settleSession(id)
+    }
+    if (key) frontKey = key
+    frontFirst = false
+    frontTimer = null
+    watchFront()
+  }, frontFirst ? 200 : 1500)
+}
+
 // claude.ai: ask the extension to bring the tab forward; if it isn't
 // listening, just open the conversation in the browser.
 function focusWebChat(t) {
@@ -369,6 +418,7 @@ async function openNotification(id) {
   const n = tracker.find(id)
   if (!n) return
   tracker.markRead(id)
+  tracker.settle(n.sessionId, { read: true })
   saveHistory()
   broadcastData()
   if (n.terminal?.web) return focusWebChat(n.terminal)
@@ -768,6 +818,7 @@ function registerIpc() {
   ipcMain.handle('history:clear', () => { tracker.clear(); saveHistory(); broadcastData() })
   ipcMain.handle('session:focus', (_, id) => {
     const s = tracker.listSessions().find(x => x.id === id)
+    if (s) settleSession(s.id)
     if (s?.terminal?.web) return focusWebChat(s.terminal)
     if (s) return focusTerminal({ terminal: s.terminal, cwd: s.cwd }, { openPath: openFolderSafely })
   })
