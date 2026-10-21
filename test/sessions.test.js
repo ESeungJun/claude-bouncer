@@ -63,10 +63,22 @@ test('a new prompt in the same session marks its notifications as read', () => {
 test('only one live needs-you card per session', () => {
   const t = tracker()
   t.handle({ ...base, kind: 'notification', message: 'Claude needs your permission to use Bash' })
-  t.handle({ ...base, kind: 'notification', message: 'Claude is waiting for your input' })
+  t.handle({ ...base, kind: 'notification', notification_type: 'elicitation_dialog', message: 'pick one' })
   const pend = t.pending()
   assert.strictEqual(pend.length, 1)
   assert.strictEqual(pend[0].kind, 'input')
+})
+
+test('"waiting for your input" makes no card and leaves the open ones alone', () => {
+  const t = tracker()
+  t.handle({ ...base, kind: 'stop' })
+  t.handle({ ...base, session_id: 's2', kind: 'notification', message: 'Claude needs your permission to use Bash' })
+  for (const data of [{ notification_type: 'idle_prompt' }, { message: 'Claude is waiting for your input' }]) {
+    assert.strictEqual(t.handle({ ...base, kind: 'notification', ...data }).notification, null)
+    assert.strictEqual(t.handle({ ...base, session_id: 's2', kind: 'notification', ...data }).notification, null)
+  }
+  assert.deepStrictEqual(t.pending().map(n => n.kind).sort(), ['done', 'permission'])
+  assert.strictEqual(t.listSessions().find(s => s.id === 's1').status, 'done')
 })
 
 test('markRead / markAllRead / session end', () => {
@@ -93,14 +105,15 @@ test('history is capped and survives a reload', () => {
 
 test('falls back to hook_event_name and survives garbage payloads', () => {
   const t = tracker()
-  assert.strictEqual(t.handle({ hook_event_name: 'Notification', message: 'Claude is waiting for your input' }).notification.kind, 'input')
+  assert.strictEqual(t.handle({ hook_event_name: 'Notification', message: 'Claude needs your permission to use Bash' }).notification.kind, 'permission')
   assert.strictEqual(t.handle(null).type, 'stop')
   assert.strictEqual(t.handle({ hook_event_name: 'UserPromptSubmit', prompt: 'hi' }).type, 'submit')
 })
 
 test('classification and messages', () => {
   assert.strictEqual(classifyNotification({ notification_type: 'permission_prompt' }), 'permission')
-  assert.strictEqual(classifyNotification({ notification_type: 'idle_prompt' }), 'input')
+  assert.strictEqual(classifyNotification({ notification_type: 'idle_prompt' }), 'idle')
+  assert.strictEqual(classifyNotification({ notification_type: 'elicitation_dialog' }), 'input')
   assert.strictEqual(classifyNotification({ message: 'something else' }), 'attention')
   assert.strictEqual(koreanMessage('permission', 'Claude needs your permission to use WebFetch'), 'WebFetch 사용 권한이 필요해요')
   assert.strictEqual(koreanMessage('input', ''), '입력을 기다리고 있어요')
