@@ -251,7 +251,7 @@ html, body {
 
 .item { position: absolute; left: 0; top: 0; pointer-events: none; }
 .item.held { pointer-events: none; filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.25)); }
-.ball { pointer-events: auto; cursor: pointer; }
+.ball { pointer-events: auto; }
 .ball-shadow {
   position: absolute;
   left: 0; top: 0;
