@@ -207,6 +207,8 @@ window.CB = window.CB || {}
       if (!this.pending.length) this.collapse(); else this.renderCards()
       this.renderBadge()
       window.api.openNotification(id)
+      // you're off to the terminal: put the ball (or snack) away too
+      if (!this.w.play?.game) this.w.play?.stop()
       this.pet.celebrate(0.9, { emote: 'heart' })
     }
 
