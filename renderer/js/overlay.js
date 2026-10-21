@@ -92,7 +92,7 @@
     }[kind]
     const items = [
       ['feed', '🍪 밥 주기'],
-      ['ball', '⚽ 공놀이'],
+      ['ball', '⚽ 축구하기'],
       ['game:catch', '🎮 쿠키 받기'],
       ['game:tag', '🏃 술래잡기'],
     ]

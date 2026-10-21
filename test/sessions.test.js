@@ -125,6 +125,12 @@ test('terminal names from bundle id / TERM_PROGRAM', () => {
   assert.strictEqual(buildTerminal({ term_program: 'vscode' }).name, 'VS Code')
   assert.strictEqual(buildTerminal({ terminal_emulator: 'JetBrains-JediTerm' }).name, 'JetBrains')
   assert.strictEqual(buildTerminal({ tmux_pane: '%3', term_program: 'tmux', tty: '/dev/ttys001' }).label, 'tmux · tmux %3 · ttys001')
+  // Orca started claude without a shell: only its tab ids are set
+  const orca = buildTerminal({ orca_tab: 'tab1', orca_pane: 'tab1:leaf1', tty: '/dev/ttys000' })
+  assert.strictEqual(orca.name, 'Orca')
+  assert.strictEqual(orca.bundleId, 'com.stablyai.orca')
+  // another app launched from Orca inherits its ids but keeps its own name
+  assert.strictEqual(buildTerminal({ orca_tab: 'tab1', term_program: 'iTerm.app' }).name, 'iTerm2')
 })
 
 test('isRealPrompt skips injected turns', () => {
