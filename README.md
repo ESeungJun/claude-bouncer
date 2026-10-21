@@ -51,7 +51,7 @@ Claude Bouncer puts a small pixel pet on your desktop. Most of the time it wande
 |---|---|
 | **Cards that show the source** | Kind (done · permission · waiting for input), project, git branch, the prompt you sent, a summary of the reply, how long it took, terminal app and tab (tty / tmux pane) |
 | **Jump back in one click** | Exact tab in iTerm2 and Terminal.app, tmux pane selection, app activation for VS Code, Cursor, Warp, Ghostty, JetBrains and more |
-| **Stays until handled** | Permission and input requests stay up while the pet waits next to you; they clear themselves once you answer in that session |
+| **Stays until handled** | Permission and input requests stay up while the pet waits next to you. Answering in that session, or jumping there from a card, clears that session's cards and their Notification Center entries. On macOS, switching to that terminal yourself clears them too (by tab in iTerm2 and Terminal.app, by app elsewhere). The "waiting for your input" reminder that follows a finished turn is skipped, since the done card already says so |
 | **At a glance** | Unread badge on the pet, count in the menu bar, a `•••` bubble while sessions are working |
 | **While you were away** | Come back to "3 notifications while you were away!" |
 | **Sessions panel** | Every open session: working · needs you · done |
