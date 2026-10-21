@@ -15,7 +15,8 @@ const { PRESETS, presetLoader, validSkin, resolveSkin } = require('./lib/skins')
 const { requestSender } = require('./lib/request')
 const { actionMenuItems } = require('./lib/actions')
 const { HiggsfieldMcp } = require('./lib/higgsfield-mcp')
-const { checkForUpdate, releasePage } = require('./lib/update')
+const { checkForUpdate, isNewer, releasePage, downloadUpdate, macBundle, cannotInstall, MAC_SWAP_SCRIPT } = require('./lib/update')
+const { execFile, spawn } = require('child_process')
 
 const IS_MAC = process.platform === 'darwin'
 
@@ -53,7 +54,7 @@ const DEFAULTS = {
   // looks made from photos; active = '' means the classic orange Claude
   skins: { list: [], active: '' },
   // last version we told the user about, so each release is announced once
-  update: { notified: '' },
+  update: { notified: '', installing: '' }, // installing: the version a swap was started for
 }
 const SKINS_MAX = 8
 
@@ -602,7 +603,11 @@ function buildTrayMenu() {
   if (!tray) return
   const s = store.data.settings
   const menu = Menu.buildFromTemplate([
-    ...(update.latest ? [{ label: `⬆ 새 버전 v${update.latest} 받기`, click: openUpdatePage }, { type: 'separator' }] : []),
+    ...(update.latest ? [{
+      label: update.installing ? `⬆ v${update.latest} 받는 중… ${Math.round(update.progress * 100)}%` : `⬆ 새 버전 v${update.latest}로 업데이트`,
+      enabled: !update.installing,
+      click: installUpdate,
+    }, { type: 'separator' }] : []),
     { label: '알림 · 세션 패널', click: () => showPanel('inbox') },
     { label: '펫 부르기', accelerator: hotkeyOk ? s.hotkey : undefined, registerAccelerator: false, click: summon },
     { type: 'separator' },
@@ -684,11 +689,12 @@ function setSetting(key, value) {
 // ---------- update check ----------
 
 // latest: a newer published version, or null; error: the last check failed
-let update = { latest: null, checking: false, error: false, checked: false }
+let update = { latest: null, checking: false, error: false, checked: false, installing: false, progress: 0 }
 let updateNotice = null // keep a reference so 'click' survives GC
 
 function updateState() {
-  return { current: app.getVersion(), latest: update.latest, checking: update.checking, error: update.error, checked: update.checked }
+  const { latest, checking, error, checked, installing, progress } = update
+  return { current: app.getVersion(), latest, checking, error, checked, installing, progress }
 }
 
 function openUpdatePage() {
@@ -702,7 +708,7 @@ function fetchUpdate() {
   update.checking = true
   send(panel, 'update', updateState())
   updateRun = checkForUpdate(app.getVersion(), { fetchImpl: net.fetch })
-    .then((r) => { update = { latest: r.newer ? r.latest : null, checking: false, error: false, checked: true } })
+    .then((r) => { update = { ...update, latest: r.newer ? r.latest : null, checking: false, error: false, checked: true } })
     .catch((e) => {
       console.error('[claude-bouncer] update check failed:', e.message)
       update = { ...update, checking: false, error: true, checked: true }
@@ -723,23 +729,117 @@ async function runUpdateCheck({ manual = false } = {}) {
       type: update.error ? 'error' : 'info',
       message: update.error ? '업데이트를 확인하지 못했어요.'
         : found ? `새 버전이 나왔어요: v${update.latest}` : `최신 버전이에요 (v${app.getVersion()}).`,
-      detail: update.error ? '인터넷 연결을 확인하고 다시 시도해 주세요.' : undefined,
-      buttons: found ? ['나중에', '다운로드 페이지 열기'] : ['확인'],
+      detail: update.error ? '인터넷 연결을 확인하고 다시 시도해 주세요.' : found ? '업데이트하면 앱이 잠깐 꺼졌다가 다시 켜져요.' : undefined,
+      buttons: found ? ['나중에', '지금 업데이트'] : ['확인'],
       defaultId: found ? 1 : 0,
     })
-    if (found && response === 1) openUpdatePage()
+    if (found && response === 1) installUpdate()
   } else if (update.latest && store.data.update.notified !== update.latest && !store.data.settings.dnd && Notification.isSupported()) {
     // announced once per version; under Do Not Disturb it waits for a later check
     store.data.update.notified = update.latest
     store.save()
-    updateNotice = new Notification({ title: 'Claude Bouncer 새 버전', body: `v${update.latest} — 눌러서 다운로드 페이지를 열어요.`, silent: true })
-    updateNotice.on('click', openUpdatePage)
+    updateNotice = new Notification({ title: 'Claude Bouncer 새 버전', body: `v${update.latest} — 눌러서 업데이트해요.`, silent: true })
+    updateNotice.on('click', installUpdate)
     updateNotice.show()
   }
   return updateState()
 }
 
+// Download, verify and swap in the new version, then quit (the new one starts
+// itself). When this copy can't replace itself, open the download page.
+async function installUpdate() {
+  if (!update.latest || update.installing) return
+  const version = update.latest
+  const why = cannotInstall({ packaged: app.isPackaged, writable: dirWritable })
+  if (why) {
+    const { response } = await dialog.showMessageBox({
+      type: 'info', message: '자동으로 설치할 수 없어요', detail: why,
+      buttons: ['닫기', '다운로드 페이지 열기'], defaultId: 1,
+    })
+    if (response === 1) openUpdatePage()
+    return
+  }
+  const setProgress = (installing, progress = 0) => {
+    update = { ...update, installing, progress }
+    buildTrayMenu()
+    send(panel, 'update', updateState())
+  }
+  setProgress(true)
+  let dir = null
+  try {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-bouncer-update-'))
+    let shown = 0
+    const file = await downloadUpdate(version, dir, {
+      arch: await cpuArch(),
+      fetchImpl: net.fetch,
+      onProgress: (p) => { if (p - shown >= 0.02 || p === 1) { shown = p; setProgress(true, p) } },
+    })
+    if (IS_MAC) {
+      const unpacked = path.join(dir, 'unpacked')
+      await execFileP('/usr/bin/ditto', ['-x', '-k', file, unpacked])
+      const newApp = path.join(unpacked, 'Claude Bouncer.app') // build.productName
+      if (!fs.existsSync(newApp)) throw new Error('받은 압축 파일에 앱이 없어요')
+      const script = path.join(dir, 'swap.sh')
+      fs.writeFileSync(script, MAC_SWAP_SCRIPT, { mode: 0o700 })
+      fs.mkdirSync(app.getPath('logs'), { recursive: true })
+      const log = fs.openSync(path.join(app.getPath('logs'), 'update.log'), 'a')
+      spawn('/bin/sh', [script, String(process.pid), macBundle(), newApp, dir], { detached: true, stdio: ['ignore', log, log] }).unref()
+    } else {
+      // silent install, then the installer starts the new version
+      spawn(file, ['/S', '--force-run'], { detached: true, stdio: 'ignore' }).unref()
+    }
+    // checked on the next launch: still the old version means the swap failed
+    store.data.update.installing = version
+    store.flush()
+    app.isQuitting = true
+    setTimeout(() => app.quit(), 300)
+  } catch (e) {
+    console.error('[claude-bouncer] update failed:', e.message)
+    if (dir) fs.rmSync(dir, { recursive: true, force: true })
+    setProgress(false)
+    const { response } = await dialog.showMessageBox({
+      type: 'error', message: '업데이트하지 못했어요', detail: e.message,
+      buttons: ['닫기', '다운로드 페이지 열기'], defaultId: 0,
+    })
+    if (response === 1) openUpdatePage()
+  }
+}
+
+function dirWritable(dir) {
+  try { fs.accessSync(dir, fs.constants.W_OK); return true } catch { return false }
+}
+
+function execFileP(cmd, args) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, { timeout: 120000 }, (err) => (err ? reject(err) : resolve()))
+  })
+}
+
+// an Intel build running under Rosetta updates to the Apple chip build
+async function cpuArch() {
+  if (process.arch === 'arm64' || !IS_MAC) return process.arch
+  const out = await new Promise((resolve) => execFile('/usr/sbin/sysctl', ['-in', 'sysctl.proc_translated'], (err, so) => resolve(err ? '' : String(so).trim())))
+  return out === '1' ? 'arm64' : process.arch
+}
+
+// After an update restart: say if the swap didn't happen (the script only
+// leaves a log line and reopens the old app).
+function reportLastInstall() {
+  const wanted = store.data.update.installing
+  if (!wanted) return
+  store.data.update.installing = ''
+  store.save()
+  if (!isNewer(wanted, app.getVersion())) return
+  dialog.showMessageBox({
+    type: 'error',
+    message: `v${wanted}로 업데이트하지 못했어요`,
+    detail: `지금은 v${app.getVersion()}이에요. 자세한 내용은 ${path.join(app.getPath('logs'), 'update.log')}에 있어요.`,
+    buttons: ['닫기', '다운로드 페이지 열기'], defaultId: 0,
+  }).then(({ response }) => { if (response === 1) shell.openExternal(releasePage(wanted)) })
+}
+
 function startUpdateChecks() {
+  reportLastInstall()
   setTimeout(() => runUpdateCheck(), 15 * 1000)
   setInterval(() => runUpdateCheck(), 6 * 60 * 60 * 1000)
 }
@@ -786,7 +886,7 @@ function registerIpc() {
     ...snapshot(),
   }))
   ipcMain.handle('update:check', () => runUpdateCheck())
-  ipcMain.handle('update:open', () => { if (update.latest) openUpdatePage() })
+  ipcMain.handle('update:open', () => installUpdate())
   // sent synchronously from the overlay's beforeunload, so it lands before we exit
   ipcMain.on('pet:save-now', (e, pet) => {
     if (pet && typeof pet === 'object') {
