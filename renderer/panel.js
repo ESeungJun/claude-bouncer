@@ -293,11 +293,17 @@
     const b = $('#update-btn')
     st.classList.remove('err', 'ok')
     if (update.checking) { st.textContent = '확인하는 중…'; b.textContent = '확인'; b.disabled = true; return }
+    if (update.installing) {
+      st.textContent = `v${update.latest} 받는 중… ${Math.round((update.progress || 0) * 100)}%`
+      b.textContent = '업데이트 중'
+      b.disabled = true
+      return
+    }
     b.disabled = false
     if (update.latest) {
       st.textContent = `새 버전 v${update.latest} 있어요 (지금 v${update.current})`
       st.classList.add('ok')
-      b.textContent = '받기'
+      b.textContent = '업데이트'
     } else {
       st.textContent = update.error ? '확인하지 못했어요 — 인터넷 연결을 확인해 주세요' : update.checked ? `지금 v${update.current} · 최신 버전이에요` : `지금 v${update.current}`
       if (update.error) st.classList.add('err')
