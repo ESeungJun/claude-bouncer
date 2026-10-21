@@ -97,7 +97,7 @@ xattr -dr com.apple.quarantine "/Applications/Claude Bouncer.app"
 
 **First launch on Windows** — if SmartScreen stops it, click **More info → Run anyway**.
 
-**Updates** — when a new version is out you get one notification, and it shows at the top of the menu-bar menu and under **Updates** in ⚙ Settings. Click it to open the download page, then install the new file over the old one. Menu-bar icon → **Check for updates** checks right away.
+**Updates** — when a new version is out you get one notification, and it shows at the top of the menu-bar menu and under **Updates** in ⚙ Settings. Click it and the app downloads the new version, checks it against the release's SHA256SUMS, swaps itself and restarts (a file that doesn't match is never installed). When it runs from outside Applications (Downloads, the dmg) or from source, it opens the download page instead. Menu-bar icon → **Check for updates** checks right away. (From v0.3.2 or older, install the next version by hand once.)
 
 On first launch the app registers the Claude Code hooks by itself; try the menu-bar (tray) icon → **테스트 알림** (*Test notification*). If you were running Claude Bouncer from source, quit it first (both use the same port). For claude.ai notifications, load the browser extension as described in [claude.ai in the browser](#claudeai-in-the-browser).
 
