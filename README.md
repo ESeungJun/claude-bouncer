@@ -68,7 +68,7 @@ Claude Bouncer puts a small pixel pet on your desktop. Most of the time it wande
 - **Summon hotkey** — <kbd>⌥ Option</kbd>+<kbd>⇧ Shift</kbd>+<kbd>C</kbd> (Windows: <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd>) from anywhere; the pet pops up in front of your cursor
 - **Pet it, poke it, throw it** — rub the mouse over it for hearts, click to make it hop, drag and toss it (it gets dizzy if you throw too hard)
 - **Feed** — a cookie sticks to your cursor; click anywhere to drop it
-- **Fetch** — kick the ball and the pet kicks it back to you
+- **Soccer** — two goals appear on screen; kick the ball into the pet's goal while it aims at yours. First to 3 wins
 - **Mini games** — 🍪 *Cookie Catch* (catch cookies, dodge bugs, 30 s) and 🏃 *Tag* (click the runaway pet, 20 s)
 - **Needs and levels** — hunger, fun and energy drift over time; it comes over when bored or hungry, sleeps when tired, and levels up as you play
 
@@ -133,7 +133,7 @@ Output goes to `dist/`. Moving the `.app` is fine — the hook path is refreshed
 |---|---|
 | Click the pet | Hop and a little reaction (opens the cards if any are waiting) |
 | Double-click | Play menu |
-| Right-click | Context menu: feed, ball, games, sleep, panel, Do Not Disturb |
+| Right-click | Context menu: feed, soccer, games, sleep, panel, Do Not Disturb |
 | Rub back and forth | Petting ♥ |
 | Drag & release | Pick up and throw |
 | Click a card | Jump to that terminal tab |
