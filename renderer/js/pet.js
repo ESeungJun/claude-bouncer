@@ -481,7 +481,8 @@ window.CB = window.CB || {}
         return this.work()
       }
 
-      const wantsCompany = mood === 'hungry' || mood === 'bored' || Math.random() < 0.04
+      // focus mode: never walk over to ask for food or play
+      const wantsCompany = !w.settings.focus && (mood === 'hungry' || mood === 'bored' || Math.random() < 0.04)
       if (wantsCompany && userActive && w.uptime > this.nextInviteAt) {
         this.nextInviteAt = w.uptime + rand(10, 18) * 60
         return this.approachUser({ then: () => w.invite(mood === 'hungry' ? 'hungry' : 'play') })
