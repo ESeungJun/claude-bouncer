@@ -1,6 +1,6 @@
 {
   "name": "claude-bouncer",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "A tiny pixel Claude that lives on your desktop — plays with you and tells you exactly which Claude Code session needs you.",
   "main": "main.js",
   "author": "ESeungjun",
@@ -64,10 +64,11 @@
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.png",
       "extendInfo": {
-        "LSUIElement": true
+        "LSUIElement": true,
+        "NSAppleEventsUsageDescription": "알림 카드를 누르면 그 세션이 열린 터미널 탭으로 이동하기 위해 사용해요."
       },
       "artifactName": "Claude-Bouncer-${version}-mac-${arch}.${ext}",
-      "identity": "-"
+      "hardenedRuntime": true
     },
     "win": {
       "target": [
