@@ -73,6 +73,7 @@
   let menuTimer = null
   let menuShownAt = 0
   let menuSide = null
+  let menuKind = null
 
   // Action ids match lib/actions.js (tray / right-click menus) and the panel.
   const ACTIONS = {
@@ -127,6 +128,7 @@
     menuOpen = true
     menuShownAt = performance.now()
     menuSide = null
+    menuKind = kind
     pet.bubble.classList.remove('show')
     clearTimeout(menuTimer)
     menuTimer = setTimeout(() => {
@@ -144,6 +146,8 @@
   }
 
   world.invite = (kind) => {
+    // the pet may already be on its way when focus mode is switched on
+    if (world.settings.focus) return pet.idle(1)
     pet.wave(16)
     openMenu(kind)
   }
@@ -336,6 +340,7 @@
     Sound.setEnabled(s.sound)
     if (scaleChanged) pet.setScale(s.scale)
     if (s.dnd && pet.act?.name !== 'sleep') { play.stop(); closeMenu(); pet.sit(20) }
+    else if (s.focus && menuOpen && menuKind !== 'menu') closeMenu()
     notify.renderBadge()
   })
 

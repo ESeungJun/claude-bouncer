@@ -33,6 +33,7 @@ const SETTING_RULES = {
   sound: v => typeof v === 'boolean',
   systemNotify: v => typeof v === 'boolean',
   dnd: v => typeof v === 'boolean',
+  focus: v => typeof v === 'boolean',
   roam: v => typeof v === 'boolean',
   launchAtLogin: v => typeof v === 'boolean',
   hotkey: v => typeof v === 'string' && v.length < 60,
@@ -42,7 +43,7 @@ const SETTING_RULES = {
 const DEFAULT_HOTKEY = 'Alt+Shift+C'
 
 const DEFAULTS = {
-  settings: { scale: 3, sound: true, systemNotify: false, dnd: false, roam: true, launchAtLogin: false, hotkey: DEFAULT_HOTKEY, skinModel: DEFAULT_MODEL },
+  settings: { scale: 3, sound: true, systemNotify: false, dnd: false, focus: false, roam: true, launchAtLogin: false, hotkey: DEFAULT_HOTKEY, skinModel: DEFAULT_MODEL },
   pet: {
     name: '클로디',
     hunger: 80, fun: 70, energy: 90,
@@ -614,6 +615,7 @@ function buildTrayMenu() {
     ...actionMenuItems(petAction),
     { type: 'separator' },
     { label: '방해 금지', type: 'checkbox', checked: s.dnd, click: (i) => setSetting('dnd', i.checked) },
+    { label: '집중 모드', type: 'checkbox', checked: s.focus, click: (i) => setSetting('focus', i.checked) },
     { label: '돌아다니기', type: 'checkbox', checked: s.roam, click: (i) => setSetting('roam', i.checked) },
     {
       label: '테스트 알림',
@@ -1027,6 +1029,7 @@ function registerIpc() {
       { label: '알림 · 세션 패널', click: () => showPanel('inbox') },
       { label: '펫 상태', click: () => showPanel('pet') },
       { label: '방해 금지', type: 'checkbox', checked: s.dnd, click: (i) => setSetting('dnd', i.checked) },
+      { label: '집중 모드', type: 'checkbox', checked: s.focus, click: (i) => setSetting('focus', i.checked) },
       { label: '돌아다니기', type: 'checkbox', checked: s.roam, click: (i) => setSetting('roam', i.checked) },
       { type: 'separator' },
       { label: '클로디 종료', click: () => { app.isQuitting = true; app.quit() } },
