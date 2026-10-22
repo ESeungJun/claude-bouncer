@@ -10,7 +10,9 @@ name: Release
 #
 # The build jobs run every dependency's install scripts, so they get
 # read-only permissions and no stored token; only the small publish job,
-# which installs nothing, can write the release.
+# which installs nothing, can write the release. The build jobs install
+# with --ignore-scripts (electron-builder fetches Electron itself), and the
+# macOS signing certificate and notary key go to the packaging step alone.
 on:
   push:
     branches: [release]
@@ -59,12 +61,48 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - name: Build installers (not published from here)
+      - run: npm ci --ignore-scripts
+      # not published from here; Windows is still unsigned
+      - name: Build installers (Windows)
+        if: runner.os == 'Windows'
         run: npx electron-builder ${{ matrix.target }} --publish never
+      - name: Build installers (macOS, signed + notarized)
+        if: runner.os == 'macOS'
         env:
-          # unsigned builds for now (no code-signing certificates yet)
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          if [ -z "$MAC_CERT_P12" ] || [ -z "$APPLE_API_KEY_P8" ]; then
+            echo "macOS signing secrets are missing"; exit 1
+          fi
+          # Import the certificate into our own throwaway keychain: electron-builder's
+          # CSC_LINK keychain can't be unlocked on the macOS 26 runners
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          kc_pass=$(openssl rand -hex 24)
+          export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8" # electron-builder wants the notary key as a file
+          trap 'security delete-keychain "$keychain" 2>/dev/null; rm -f "$RUNNER_TEMP/cert.p12" "$APPLE_API_KEY"' EXIT
+          printf '%s' "$MAC_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          printf '%s\n' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY"
+          security create-keychain -p "$kc_pass" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$kc_pass" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$MAC_CERT_PASSWORD" -f pkcs12 -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kc_pass" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          # forceCodeSigning: fail instead of quietly shipping an ad-hoc build
+          npx electron-builder ${{ matrix.target }} --publish never -c.mac.forceCodeSigning=true
+      - name: Check signature and notarization (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          for app in dist/mac*/*.app; do
+            codesign --verify --deep --strict "$app"
+            xcrun stapler validate "$app"
+            spctl --assess --type execute -vv "$app"
+          done
       # only the installers people download: no electron-updater .blockmap /
       # latest*.yml (there is no auto-updater)
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -100,15 +138,8 @@ jobs:
           fi
           # a draft from an earlier run of the same version points at an older commit: recreate it
           if [ "$state" = "true" ]; then gh release delete "v$VERSION" --yes; fi
-          # Gatekeeper/SmartScreen guide on top of the generated notes: the builds are unsigned
+          # SmartScreen guide on top of the generated notes: the Windows build is unsigned
           cat > notes.md <<'NOTES'
-          ### macOS 첫 실행
-          Apple 공증을 받지 않은 앱이라 "Apple은 'Claude Bouncer'에 … 악성 코드가 없음을 확인할 수 없습니다"가 떠요. 앱을 응용 프로그램 폴더로 옮겨 한 번 열어본 뒤, **시스템 설정 → 개인정보 보호 및 보안** 아래쪽의 **그래도 열기**를 누르세요. 버튼이 없거나 "손상되었다"고 나오면 터미널에서 한 번 실행하세요.
-          ```bash
-          xattr -dr com.apple.quarantine "/Applications/Claude Bouncer.app"
-          ```
-          The app isn't notarized: open it once, then press **Open Anyway** in **System Settings → Privacy & Security** (or run the command above).
-
           ### Windows 첫 실행
           SmartScreen이 막으면 **추가 정보 → 실행** (More info → Run anyway).
 
