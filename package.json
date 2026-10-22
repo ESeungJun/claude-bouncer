@@ -1,6 +1,6 @@
 {
   "name": "claude-bouncer",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "A tiny pixel Claude that lives on your desktop — plays with you and tells you exactly which Claude Code session needs you.",
   "main": "main.js",
   "author": "ESeungjun",
