@@ -57,6 +57,7 @@ Claude Bouncer puts a small pixel pet on your desktop. Most of the time it wande
 | **Sessions panel** | Every open session: working · needs you · done |
 | **claude.ai too** | With the browser extension, web chats on claude.ai notify you when Claude finishes answering |
 | **Do Not Disturb** | Badge only, no sound or movement. Optional system notifications |
+| **Focus mode** | Notifications still arrive, but the pet never walks over asking to eat or play |
 
 <p align="center">
   <img src="docs/panel-inbox.png" width="250" alt="Inbox" />
@@ -133,14 +134,14 @@ Output goes to `dist/`. Moving the `.app` is fine — the hook path is refreshed
 |---|---|
 | Click the pet | Hop and a little reaction (opens the cards if any are waiting) |
 | Double-click | Play menu |
-| Right-click | Context menu: feed, soccer, games, sleep, panel, Do Not Disturb |
+| Right-click | Context menu: feed, soccer, games, sleep, panel, Do Not Disturb, focus mode |
 | Rub back and forth | Petting ♥ |
 | Drag & release | Pick up and throw |
 | Click a card | Jump to that terminal tab |
 | <kbd>⌥</kbd><kbd>⇧</kbd><kbd>C</kbd> | Summon to your cursor (press again to close the cards) |
-| Menu-bar icon | Panel, summon, play, Do Not Disturb, roaming, test notifications, hook management |
+| Menu-bar icon | Panel, summon, play, Do Not Disturb, focus mode, roaming, test notifications, hook management |
 
-**Panel tabs:** 🔔 Inbox · 🖥 Sessions · 🐾 Pet (stats, actions, custom look) · ⚙ Settings (size, roaming (off: the pet alerts from where it stands instead of running to your cursor), sound, system notifications, Do Not Disturb, launch at login, summon hotkey)
+**Panel tabs:** 🔔 Inbox · 🖥 Sessions · 🐾 Pet (stats, actions, custom look) · ⚙ Settings (size, roaming (off: the pet alerts from where it stands instead of running to your cursor), sound, system notifications, Do Not Disturb, focus mode, launch at login, summon hotkey)
 
 ## claude.ai in the browser
 
