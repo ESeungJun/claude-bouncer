@@ -91,10 +91,7 @@ Grab **one installer** for your computer from [Releases](https://github.com/ESeu
 
 The `.zip` files are the same app without the dmg, and `SHA256SUMS` lets you check your download (`shasum -a 256 -c SHA256SUMS --ignore-missing`).
 
-**First launch on macOS** — the app isn't notarized by Apple, so macOS says it can't verify that "Claude Bouncer" is free of malware. Drag the app into Applications, try opening it once, then press **Open Anyway** at the bottom of **System Settings → Privacy & Security**. If macOS says the app "is damaged" or there's no Open Anyway button, run this once in Terminal:
-```bash
-xattr -dr com.apple.quarantine "/Applications/Claude Bouncer.app"
-```
+**First launch on macOS** — the app is signed and notarized by Apple: drag it into Applications and open it. The first time a card jumps to a terminal tab, macOS asks whether Claude Bouncer may control that terminal — click **Allow**. (v0.3.6 and older weren't notarized and need **Open Anyway** or `xattr -dr com.apple.quarantine "/Applications/Claude Bouncer.app"`.)
 
 **First launch on Windows** — if SmartScreen stops it, click **More info → Run anyway**.
 

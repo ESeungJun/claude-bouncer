@@ -89,10 +89,7 @@ Claude Bouncer는 바탕화면에 작은 도트 펫을 띄워요. 평소엔 화�
 
 `.zip`은 dmg 대신 쓰는 같은 앱이고, `SHA256SUMS`는 받은 파일이 맞는지 확인하는 체크섬이에요 (`shasum -a 256 -c SHA256SUMS --ignore-missing`).
 
-**macOS 첫 실행** — Apple 공증을 받지 않은 앱이라 "Apple은 'Claude Bouncer'에 … 악성 코드가 없음을 확인할 수 없습니다"가 떠요. dmg에서 앱을 응용 프로그램 폴더로 옮긴 뒤 한 번 열어보고, **시스템 설정 → 개인정보 보호 및 보안** 아래쪽의 **그래도 열기**를 누르세요. "손상되었기 때문에 열 수 없습니다"가 뜨거나 그래도 열기 버튼이 없으면 터미널에서 한 번 실행하세요.
-```bash
-xattr -dr com.apple.quarantine "/Applications/Claude Bouncer.app"
-```
+**macOS 첫 실행** — Apple 서명·공증을 받은 앱이라 dmg에서 응용 프로그램 폴더로 옮긴 뒤 바로 열면 돼요. 카드를 눌러 터미널 탭으로 이동할 때 "터미널을 제어하려고 합니다" 창이 한 번 뜨면 **허용**을 누르세요. (v0.3.6 이하는 공증 전 버전이라 "그래도 열기" 또는 `xattr -dr com.apple.quarantine "/Applications/Claude Bouncer.app"`가 필요해요.)
 
 **Windows 첫 실행** — SmartScreen이 막으면 **추가 정보 → 실행**을 누르세요.
 
