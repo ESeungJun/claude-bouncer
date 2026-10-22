@@ -10,8 +10,9 @@ name: Release
 #
 # The build jobs run every dependency's install scripts, so they get
 # read-only permissions and no stored token; only the small publish job,
-# which installs nothing, can write the release. The macOS signing
-# certificate and notary key are handed to the packaging step alone.
+# which installs nothing, can write the release. The build jobs install
+# with --ignore-scripts (electron-builder fetches Electron itself), and the
+# macOS signing certificate and notary key go to the packaging step alone.
 on:
   push:
     branches: [release]
@@ -60,7 +61,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       # not published from here; Windows is still unsigned
       - name: Build installers (Windows)
         if: runner.os == 'Windows'
@@ -68,19 +69,30 @@ jobs:
       - name: Build installers (macOS, signed + notarized)
         if: runner.os == 'macOS'
         env:
-          CSC_LINK: ${{ secrets.MAC_CERT_P12 }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
-          if [ -z "$CSC_LINK" ] || [ -z "$APPLE_API_KEY_P8" ]; then
+          if [ -z "$MAC_CERT_P12" ] || [ -z "$APPLE_API_KEY_P8" ]; then
             echo "macOS signing secrets are missing"; exit 1
           fi
-          # electron-builder wants the notary key as a file
-          export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
-          trap 'rm -f "$APPLE_API_KEY"' EXIT
+          # Import the certificate into our own throwaway keychain: electron-builder's
+          # CSC_LINK keychain can't be unlocked on the macOS 26 runners
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          kc_pass=$(openssl rand -hex 24)
+          export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8" # electron-builder wants the notary key as a file
+          trap 'security delete-keychain "$keychain" 2>/dev/null; rm -f "$RUNNER_TEMP/cert.p12" "$APPLE_API_KEY"' EXIT
+          printf '%s' "$MAC_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
           printf '%s\n' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY"
+          security create-keychain -p "$kc_pass" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$kc_pass" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$MAC_CERT_PASSWORD" -f pkcs12 -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kc_pass" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
           # forceCodeSigning: fail instead of quietly shipping an ad-hoc build
           npx electron-builder ${{ matrix.target }} --publish never -c.mac.forceCodeSigning=true
       - name: Check signature and notarization (macOS)
