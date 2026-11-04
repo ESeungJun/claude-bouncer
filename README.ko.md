@@ -10,7 +10,7 @@
 
 ![macOS](https://img.shields.io/badge/macOS-supported-black?logo=apple)
 ![Windows](https://img.shields.io/badge/Windows-supported-0078D6?logo=windows)
-![Electron](https://img.shields.io/badge/Electron-32-47848F?logo=electron&logoColor=white)
+![Electron](https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 <img src="docs/notify-cards.png" width="300" alt="알림 카드" />
@@ -259,7 +259,7 @@ macOS: `lsof -i :17891` · Windows: `netstat -ano | findstr :17891` — 충돌�
 
 ```bash
 npm start          # 소스로 실행
-npm test           # 단위 테스트: 세션, 서버, 저장소, 스프라이트, 스킨, Higgsfield 클라이언트
+npm test           # 단위 테스트: 세션, 서버, 저장소, 탭 이동, 업데이트, 스프라이트, 스킨, Higgsfield 클라이언트
 npm run sprites    # docs/sprite-sheet.png 다시 만들기
 npm run template   # assets/skin-template.png 다시 만들기 (Higgsfield에 보내는 템플릿)
 ```
@@ -278,6 +278,10 @@ lib/
   focus.js              알맞은 터미널 탭으로 이동
   higgsfield-mcp.js     MCP(OAuth)로 Higgsfield 연결 — 나만의 캐릭터
   higgsfield.js         Higgsfield API 키 클라이언트 + 프롬프트
+  skins.js              기본 캐릭터 + 사진 캐릭터 검사
+  request.js            "직접 요청하기" — FormSubmit으로 사진 보내기
+  actions.js            트레이·메뉴·패널이 함께 쓰는 놀이 동작 목록
+  update.js             업데이트 확인, 다운로드, SHA256SUMS 검사, 교체
   store.js              JSON 저장
 extension/              claude.ai 브라우저 확장 (MV3)
 renderer/
