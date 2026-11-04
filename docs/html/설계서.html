@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Bouncer 설계서 · claude-bouncer</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<style>
+:root{--bg:#fbfaf8;--panel:#fff;--text:#1f2328;--muted:#656d76;--line:#e6e3de;--accent:#3b5bdb;--accent-soft:#edf2ff;--code:#f4f2ee;--th:#f4f2ee}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15171a;--panel:#1c1f23;--text:#e6e6e3;--muted:#9aa1a9;--line:#2e3238;--accent:#91a7ff;--accent-soft:#232a45;--code:#23262b;--th:#23262b}}
+:root[data-theme="dark"]{--bg:#15171a;--panel:#1c1f23;--text:#e6e6e3;--muted:#9aa1a9;--line:#2e3238;--accent:#91a7ff;--accent-soft:#232a45;--code:#23262b;--th:#23262b}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.75 Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;word-break:keep-all;overflow-wrap:anywhere}
+.layout{display:grid;grid-template-columns:240px minmax(0,1fr) 220px;gap:40px;max-width:1280px;margin:0 auto;padding:32px 24px}
+nav.docs,aside.toc{position:sticky;top:24px;align-self:start;max-height:calc(100vh - 48px);overflow:auto;font-size:14px}
+nav.docs .project{font-weight:700;font-size:15px;margin-bottom:12px}
+nav.docs a,aside.toc a{display:block;color:var(--muted);text-decoration:none;padding:5px 10px;border-radius:8px}
+nav.docs a:hover,aside.toc a:hover{color:var(--text);background:var(--accent-soft)}
+nav.docs a.on{color:var(--accent);background:var(--accent-soft);font-weight:600}
+aside.toc .label{color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.04em;margin:0 10px 6px}
+aside.toc a.d3{padding-left:22px;font-size:13px}
+main{min-width:0}
+.meta{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:13px;border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:8px}
+.meta button{font:inherit;color:var(--muted);background:none;border:1px solid var(--line);border-radius:999px;padding:3px 12px;cursor:pointer}
+h1{font-size:32px;line-height:1.3;margin:24px 0 16px}
+h2{font-size:23px;margin:48px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+h3{font-size:18px;margin:32px 0 8px}
+h1,h2,h3,h4{position:relative;scroll-margin-top:16px}
+.anchor{position:absolute;left:-1em;color:var(--muted);text-decoration:none;opacity:0}
+h1:hover .anchor,h2:hover .anchor,h3:hover .anchor,h4:hover .anchor{opacity:.6}
+a{color:var(--accent)}
+code{font:13.5px/1.6 "JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:2px 6px;border-radius:5px}
+pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto}
+pre code{background:none;padding:0}
+pre.mermaid{background:var(--panel);text-align:center}
+table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14.5px;display:block;overflow-x:auto}
+th,td{border:1px solid var(--line);padding:8px 12px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600;white-space:nowrap}
+blockquote{margin:16px 0;padding:8px 16px;border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 8px 8px 0;color:var(--text)}
+img{max-width:100%;border-radius:8px}
+hr{border:0;border-top:1px solid var(--line);margin:32px 0}
+li{margin:3px 0}
+@media (max-width:1100px){.layout{grid-template-columns:200px minmax(0,1fr)}aside.toc{display:none}}
+@media (max-width:760px){.layout{display:block;padding:16px}nav.docs{position:static;max-height:none;display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}nav.docs .project{width:100%;margin:0}h1{font-size:26px}}
+@media print{nav.docs,aside.toc,.meta button{display:none}.layout{display:block}}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="docs"><div class="project">claude-bouncer</div><a href="%EA%B8%B0%ED%9A%8D%EC%84%9C.html">기획서</a><a href="%EC%84%A4%EA%B3%84%EC%84%9C.html" class="on">설계서</a><a href="%EA%B5%AC%ED%98%84%EB%8F%84.html">구현도</a><a href="%EA%B2%B0%EC%A0%95%EA%B8%B0%EB%A1%9D.html">결정기록</a></nav>
+<main>
+<div class="meta"><span>마지막 수정 2026-11-04 · 원본 docs/설계서.md</span><button id="theme" type="button">테마</button></div>
+<h1 id="claude-bouncer-설계서"><a class="anchor" href="#claude-bouncer-설계서">#</a>Claude Bouncer 설계서</h1>
+<blockquote>
+<p>2026-11-05에 v0.3.7 코드와 git 히스토리에서 복원했다.</p>
+</blockquote>
+<p>관련 문서: <a href="기획서.html">기획서</a> · <a href="구현도.html">구현도</a> · <a href="결정기록.html">결정기록</a></p>
+<h2 id="기술-스택과-고른-이유"><a class="anchor" href="#기술-스택과-고른-이유">#</a>기술 스택과 고른 이유</h2>
+<table>
+<thead>
+<tr>
+<th>영역</th>
+<th>고른 것</th>
+<th>이유 (근거)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>데스크톱 셸</td>
+<td>Electron 44 (<code>package.json</code> devDependencies)</td>
+<td>투명·클릭 통과 전체 화면 창, 트레이, 전역 단축키, OS 키체인(<code>safeStorage</code>)을 macOS·Windows 공통으로 쓸 수 있다. v1(2026-04)부터 Electron이었다. 2026-10-17 보안 리뷰에서 지원 종료된 Electron 32를 44.7로 올렸다(<code>73cd4fb</code>)</td>
+</tr>
+<tr>
+<td>UI</td>
+<td>순수 HTML·CSS·JS + Canvas</td>
+<td>펫은 18×14 도트를 코드로 찍어 그린다(<code>renderer/js/sprites.js</code>). 프레임워크 없이 오버레이와 패널 두 창만 있다</td>
+</tr>
+<tr>
+<td>훅 스크립트</td>
+<td>POSIX sh(<code>send-notify.sh</code>) / PowerShell(<code>send-notify.ps1</code>)</td>
+<td>Node.js 없는 컴퓨터에서도 알림이 와야 한다. 처음엔 앱 바이너리를 <code>ELECTRON_RUN_AS_NODE=1</code>로 돌렸지만 보안 퓨즈를 켜려고 버렸다(<code>39ccf1c</code> → <code>73cd4fb</code>)</td>
+</tr>
+<tr>
+<td>앱 수신</td>
+<td>Node <code>http</code> 로컬 서버, <code>127.0.0.1:17891</code></td>
+<td>훅·확장이 붙기 가장 단순한 경로</td>
+</tr>
+<tr>
+<td>저장</td>
+<td>JSON 파일(<code>lib/store.js</code>)</td>
+<td>상태가 작다. 원자적 쓰기(<code>.tmp</code> → rename), 0600 권한, 깨진 파일은 옆에 보관</td>
+</tr>
+<tr>
+<td>이미지 생성</td>
+<td>Higgsfield (MCP + OAuth, 대체로 API 키)</td>
+<td>사용자가 키 발급 단계에서 멈출 것 같아 계정 로그인 방식을 기본으로 했다(개발 글, <code>c82eeac</code>)</td>
+</tr>
+<tr>
+<td>MCP 클라이언트</td>
+<td><code>@modelcontextprotocol/sdk</code></td>
+<td>Claude Code의 Higgsfield 커넥터와 같은 연결 방식</td>
+</tr>
+<tr>
+<td>패키징</td>
+<td>electron-builder 26</td>
+<td>dmg·zip·NSIS를 한 설정으로 만든다</td>
+</tr>
+<tr>
+<td>배포</td>
+<td>GitHub Actions(<code>.github/workflows/release.yml</code>) + GitHub Releases</td>
+<td>draft 릴리스로 확인 후 공개</td>
+</tr>
+<tr>
+<td>폰트</td>
+<td>Galmuri(SIL OFL 1.1)</td>
+<td>도트 감성의 한글 폰트</td>
+</tr>
+</tbody></table>
+<p>후보를 나란히 비교한 기록(예: Tauri와 비교)은 남아 있지 않다. 그래서 비교표는 만들지 않았다.</p>
+<h2 id="전체-아키텍처"><a class="anchor" href="#전체-아키텍처">#</a>전체 아키텍처</h2>
+<pre class="mermaid">flowchart LR
+  subgraph CC[&quot;Claude Code (터미널·IDE)&quot;]
+    H[&quot;훅 4개&lt;br/&gt;Stop · Notification&lt;br/&gt;UserPromptSubmit · SessionEnd&quot;]
+  end
+  subgraph BR[&quot;크로미움 브라우저&quot;]
+    EXT[&quot;claude.ai 확장 (MV3)&lt;br/&gt;content.js + background.js&quot;]
+  end
+  H --&gt; SN[&quot;send-notify.sh / .ps1&lt;br/&gt;tty · tmux · Orca 패널 헤더 추가&quot;]
+  SN -- &quot;POST /notify + 토큰&quot; --&gt; SRV
+  EXT -- &quot;POST /notify, /ext/hello&lt;br/&gt;GET /ext/next 롱폴&quot; --&gt; SRV
+  subgraph APP[&quot;Claude Bouncer (Electron 메인)&quot;]
+    SRV[&quot;lib/server.js&lt;br/&gt;127.0.0.1:17891&quot;]
+    SES[&quot;lib/sessions.js&lt;br/&gt;세션 추적 · 대화 기록 요약&quot;]
+    FOC[&quot;lib/focus.js&lt;br/&gt;터미널 탭 이동&quot;]
+    UPD[&quot;lib/update.js&lt;br/&gt;업데이트&quot;]
+    HF[&quot;lib/higgsfield-mcp.js&lt;br/&gt;lib/higgsfield.js&quot;]
+    ST[&quot;lib/store.js&lt;br/&gt;state · skins · history&quot;]
+  end
+  SRV --&gt; SES
+  SES --&gt; OV[&quot;오버레이 창&lt;br/&gt;펫 · 카드 · 게임&quot;]
+  SES --&gt; PN[&quot;패널 창&lt;br/&gt;알림함 · 세션 · 펫 · 설정&quot;]
+  OV -- &quot;카드 클릭&quot; --&gt; FOC
+  FOC --&gt; T[&quot;iTerm2 · 터미널 · tmux · Orca · 기타 앱&quot;]
+  PN --&gt; HF
+  HF --&gt; HIG[&quot;Higgsfield MCP / API&quot;]
+  UPD --&gt; GH[&quot;GitHub Releases API&quot;]
+  SES --&gt; ST</pre>
+<ul>
+<li>메인 프로세스(<code>main.js</code>)가 창 두 개(오버레이·패널), 트레이, 전역 단축키, IPC를 맡는다.</li>
+<li>렌더러는 <code>preload.js</code>가 연 IPC 채널만 쓴다.</li>
+<li>오버레이는 화면 전체를 덮는 투명 창이고, 펫·카드·메뉴 위에 있을 때만 마우스를 받는다(<code>mouse:ignore</code> IPC).</li>
+</ul>
+<h2 id="데이터-구조저장소외부-api"><a class="anchor" href="#데이터-구조저장소외부-api">#</a>데이터 구조·저장소·외부 API</h2>
+<h3 id="로컬-파일"><a class="anchor" href="#로컬-파일">#</a>로컬 파일</h3>
+<table>
+<thead>
+<tr>
+<th>파일</th>
+<th>내용</th>
+<th>위치</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>state.json</code></td>
+<td>설정(크기·효과음·시스템 알림·방해 금지·집중 모드·돌아다니기·로그인 시 실행·단축키·스킨 모델), 펫 상태(배고픔·재미·기운·경험치·레벨·최고 점수 등), 업데이트 안내 기록</td>
+<td>앱 데이터 폴더(<code>app.getPath(&#39;userData&#39;)</code>)</td>
+</tr>
+<tr>
+<td><code>skins.json</code></td>
+<td>만든 모습 목록(최대 8개)과 현재 모습</td>
+<td>앱 데이터 폴더</td>
+</tr>
+<tr>
+<td><code>history-v2.json</code></td>
+<td>알림 기록(최대 100개)</td>
+<td>앱 데이터 폴더</td>
+</tr>
+<tr>
+<td><code>claude-bouncer.token</code></td>
+<td>훅·확장 인증용 무작위 토큰(0600)</td>
+<td><code>~/.claude/</code></td>
+</tr>
+<tr>
+<td><code>settings.json</code></td>
+<td>Claude Code 설정. 앱은 자기 훅 4개만 넣고 뺀다</td>
+<td><code>~/.claude/</code></td>
+</tr>
+<tr>
+<td>확장 사본 + <code>token.json</code></td>
+<td>토큰을 넣은 확장 폴더</td>
+<td>앱 데이터 폴더</td>
+</tr>
+</tbody></table>
+<p>macOS 앱 데이터 폴더는 <code>~/Library/Application Support/claude-bouncer</code>(README).</p>
+<h3 id="로컬-서버-경로-libserverjs"><a class="anchor" href="#로컬-서버-경로-libserverjs">#</a>로컬 서버 경로 (<code>lib/server.js</code>)</h3>
+<table>
+<thead>
+<tr>
+<th>경로</th>
+<th>쓰는 쪽</th>
+<th>설명</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET /health</code></td>
+<td>누구나</td>
+<td>살아 있는지 확인. 토큰 불필요</td>
+</tr>
+<tr>
+<td><code>POST /notify</code></td>
+<td>훅, 확장</td>
+<td>이벤트 전달. 토큰 필요</td>
+</tr>
+<tr>
+<td><code>POST /ext/hello</code></td>
+<td>확장</td>
+<td>확장 연결 알림</td>
+</tr>
+<tr>
+<td><code>GET /ext/next</code></td>
+<td>확장</td>
+<td>&quot;이 탭으로 가&quot; 명령 롱폴(대기자 최대 2)</td>
+</tr>
+</tbody></table>
+<h3 id="외부-api"><a class="anchor" href="#외부-api">#</a>외부 API</h3>
+<table>
+<thead>
+<tr>
+<th>대상</th>
+<th>용도</th>
+<th>언제</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Higgsfield MCP(OAuth, PKCE) / Higgsfield API(Key ID+Secret)</td>
+<td>사진 → 캐릭터 시트 생성</td>
+<td>사용자가 캐릭터를 만들 때만</td>
+</tr>
+<tr>
+<td>FormSubmit</td>
+<td>&quot;직접 요청하기&quot; 메일 전달</td>
+<td>사용자가 동의하고 보낼 때만</td>
+</tr>
+<tr>
+<td>GitHub Releases API</td>
+<td>최신 버전 확인, 설치 파일·SHA256SUMS 다운로드</td>
+<td>켠 뒤 15초, 이후 6시간마다</td>
+</tr>
+</tbody></table>
+<h2 id="플랫폼별-차이"><a class="anchor" href="#플랫폼별-차이">#</a>플랫폼별 차이</h2>
+<table>
+<thead>
+<tr>
+<th>항목</th>
+<th>macOS</th>
+<th>Windows</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>훅 스크립트</td>
+<td><code>send-notify.sh</code> (sh·ps·curl)</td>
+<td><code>send-notify.ps1</code> (PowerShell 5.1, UTF-8 입력)</td>
+</tr>
+<tr>
+<td>탭 이동</td>
+<td>iTerm2·터미널은 tty로 탭까지(AppleScript), tmux pane, Orca CLI로 탭, 그 밖은 번들 ID로 앱 활성화</td>
+<td>앱을 앞으로</td>
+</tr>
+<tr>
+<td>터미널로 직접 전환 시 카드 정리</td>
+<td>지원(iTerm2·터미널은 탭 단위, 그 밖은 앱 단위)</td>
+<td>기록 없음</td>
+</tr>
+<tr>
+<td>메뉴바/트레이</td>
+<td>메뉴바(<code>LSUIElement</code>로 Dock 아이콘 없음)</td>
+<td>트레이</td>
+</tr>
+<tr>
+<td>서명</td>
+<td>Developer ID 서명 + 공증(v0.3.7~), hardened runtime, apple-events 권한</td>
+<td>서명 없음(SmartScreen 안내)</td>
+</tr>
+<tr>
+<td>앱 안 업데이트</td>
+<td>zip을 풀고 앱 종료 뒤 분리된 sh 스크립트가 번들 교체, 실패하면 복원</td>
+<td>NSIS 설치 파일을 조용히 실행 후 재시작</td>
+</tr>
+<tr>
+<td>업데이트 불가 조건</td>
+<td>소스 실행, 응용 프로그램 폴더 밖, 쓰기 권한 없음 → 다운로드 페이지 열기</td>
+<td>소스 실행 등 → 다운로드 페이지</td>
+</tr>
+</tbody></table>
+<h2 id="보안권한"><a class="anchor" href="#보안권한">#</a>보안·권한</h2>
+<ul>
+<li>로컬 서버는 <code>127.0.0.1</code>에서만 열고 <code>Host</code> 헤더를 확인한다(DNS 리바인딩 대응). JSON 요청만 받고 웹 페이지 요청은 거절한다.</li>
+<li>훅·확장 요청은 사용자별 토큰이 있어야 한다. 없으면 401. 훅이 <code>web</code> 출처를 사칭할 수 없고, 확장 요청은 claude.ai 필드로 줄인다.</li>
+<li>세션 맵은 최대 300개, 롱폴 대기자는 최대 2개로 제한한다.</li>
+<li>대화 기록은 <code>~/.claude</code> 아래 일반 파일만 읽는다(FIFO로 메인 스레드가 막히는 것 방지). 끝에서 256KB만 읽는다.</li>
+<li>Electron 퓨즈: <code>runAsNode</code>·<code>NODE_OPTIONS</code>·디버거 인자 끔, <code>onlyLoadAppFromAsar</code>·쿠키 암호화 켬.</li>
+<li>앱 창 안에서 페이지 이동·팝업을 막는다.</li>
+<li>카드에서 폴더를 열 때 실제 폴더만 연다. macOS 패키지 폴더(<code>.pkg</code>, <code>.workflow</code> 등)는 열지 않는다.</li>
+<li>Higgsfield 토큰·API 키는 <code>safeStorage</code>(OS 키체인)로 암호화해서만 저장한다. 암호화가 안 되면 저장을 거부한다. API 키는 Higgsfield API 주소로만 보낸다.</li>
+<li>OAuth 콜백은 정확한 <code>state</code>가 맞을 때만 받는다.</li>
+<li>업데이트는 릴리스의 SHA256SUMS와 맞을 때만 설치한다. 링크는 응답이 아니라 검증한 버전 번호로 만든다.</li>
+<li>릴리스 워크플로: 빌드 작업은 읽기 권한만, 설치 스크립트 없이(<code>npm ci --ignore-scripts</code>) 설치하고, 릴리스 쓰기는 별도 publish 작업만 한다. 서명 인증서·공증 키는 패키징 단계에만 넘긴다. 액션은 SHA로 고정한다.</li>
+<li>바깥으로 나가는 데이터는 &quot;나만의 캐릭터&quot;(사진 → Higgsfield)와 &quot;직접 요청하기&quot;(동의 후 FormSubmit)뿐이다.</li>
+</ul>
+<h2 id="알려진-한계"><a class="anchor" href="#알려진-한계">#</a>알려진 한계</h2>
+<ul>
+<li>Claude 데스크톱 앱 채팅, 클라우드 Claude Code 세션은 감지하지 못한다.</li>
+<li>Windows는 탭 단위 이동이 없고 앱만 앞으로 온다. 코드 서명도 없다.</li>
+<li>claude.ai 감지는 답변 요소의 <code>data-is-streaming</code> 속성에 기대므로 claude.ai 화면 구조가 바뀌면 깨질 수 있다.</li>
+<li>포트 17891을 다른 프로그램이 쓰면 알림을 못 받는다(README 문제 해결).</li>
+<li>사진 캐릭터는 Higgsfield 크레딧을 쓴다(한 번에 이미지 2장, 약 3크레딧, README). API 키 경로는 실제 API로 검증한 기록이 없다(프로젝트 메모리).</li>
+<li>README 배지는 아직 &quot;Electron 32&quot;로 적혀 있다. 실제 의존성은 44.7이다.</li>
+</ul>
+
+</main>
+<aside class="toc"><div class="label">이 문서</div><a class="d2" href="#기술-스택과-고른-이유">기술 스택과 고른 이유</a><a class="d2" href="#전체-아키텍처">전체 아키텍처</a><a class="d2" href="#데이터-구조저장소외부-api">데이터 구조·저장소·외부 API</a><a class="d3" href="#로컬-파일">로컬 파일</a><a class="d3" href="#로컬-서버-경로-libserverjs">로컬 서버 경로 (lib/server.js)</a><a class="d3" href="#외부-api">외부 API</a><a class="d2" href="#플랫폼별-차이">플랫폼별 차이</a><a class="d2" href="#보안권한">보안·권한</a><a class="d2" href="#알려진-한계">알려진 한계</a></aside>
+</div>
+<script>
+(function(){var r=document.documentElement,k='docs-theme';try{var s=localStorage.getItem(k);if(s)r.dataset.theme=s}catch(e){}
+document.getElementById('theme').onclick=function(){var d=r.dataset.theme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');r.dataset.theme=d==='dark'?'light':'dark';try{localStorage.setItem(k,r.dataset.theme)}catch(e){}location.reload()};})();
+</script>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs';
+const r=document.documentElement;const dark=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;
+mermaid.initialize({startOnLoad:true,theme:dark?'dark':'default',fontFamily:'Pretendard, sans-serif'});
+</script>
+</body>
+</html>
