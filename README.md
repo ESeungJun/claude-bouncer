@@ -10,7 +10,7 @@ English · [한국어](README.ko.md)
 
 ![macOS](https://img.shields.io/badge/macOS-supported-black?logo=apple)
 ![Windows](https://img.shields.io/badge/Windows-supported-0078D6?logo=windows)
-![Electron](https://img.shields.io/badge/Electron-32-47848F?logo=electron&logoColor=white)
+![Electron](https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 <img src="docs/notify-cards.png" width="300" alt="Notification cards" />
@@ -247,7 +247,7 @@ macOS: `lsof -i :17891` · Windows: `netstat -ano | findstr :17891` — stop the
 
 ```bash
 npm start          # run from source
-npm test           # unit tests: sessions, server, store, sprites, skins, Higgsfield clients
+npm test           # unit tests: sessions, server, store, focus, updates, sprites, skins, Higgsfield clients
 npm run sprites    # regenerate docs/sprite-sheet.png
 npm run template   # regenerate assets/skin-template.png (reference sent to Higgsfield)
 ```
@@ -266,6 +266,10 @@ lib/
   focus.js              jump to the right terminal tab
   higgsfield-mcp.js     Higgsfield over MCP (OAuth) for custom looks
   higgsfield.js         Higgsfield API-key client + prompts
+  skins.js              built-in looks + validation of custom looks
+  request.js            "Request one" — photo sent to the maintainer via FormSubmit
+  actions.js            pet play actions shared by tray, menus and panel
+  update.js             update check, download, SHA256SUMS check, swap
   store.js              JSON persistence
 extension/              claude.ai browser extension (MV3)
 renderer/
