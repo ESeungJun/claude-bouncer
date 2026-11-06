@@ -8,6 +8,8 @@
 
 [English](README.md) · 한국어
 
+📝 만든 이야기: [velog](https://velog.io/@haul/claude-bouncer-desktop-pet)
+
 ![macOS](https://img.shields.io/badge/macOS-supported-black?logo=apple)
 ![Windows](https://img.shields.io/badge/Windows-supported-0078D6?logo=windows)
 ![Electron](https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white)
