@@ -10,6 +10,12 @@ window.CB = window.CB || {}
   const KIND = CB.KINDS
 
   const isNeed = (n) => n.kind !== 'done'
+  const snoozed = (n) => n.snoozedUntil > Date.now()
+  // 지금 답을 기다리는 알림 (미뤄 둔 것은 뺀다)
+  const isActiveNeed = (n) => isNeed(n) && !snoozed(n)
+  // 막 온 응답 필요 알림만 깜빡인다. 그 뒤로는 색으로만 구분한다.
+  const FRESH_MS = 6000
+  const isFresh = (n) => isActiveNeed(n) && Date.now() - (n.nudgedAt || n.ts) < FRESH_MS
   const ARM_MS = 700 // ignore clicks this soon after a popup appears (it may have landed under a click)
 
   // Place a w×h popup next to the pet. The side is picked once, when the popup
@@ -36,6 +42,7 @@ window.CB = window.CB || {}
   }
   CB.place = place
   CB.ARM_MS = ARM_MS
+  CB.SNOOZE_MS = 10 * 60 * 1000
 
   function ago(ts) {
     const s = Math.max(0, (Date.now() - ts) / 1000)
@@ -73,25 +80,31 @@ window.CB = window.CB || {}
       this.working.title = '작업 중인 Claude 세션'
 
       this.stack = el('div', 'stack')
+      this.size = null // 카드 묶음 크기 (바뀔 때만 다시 잰다)
+      this.shownIds = new Set()
       world.layer.append(this.badge, this.working, this.stack)
       setInterval(() => this.refreshTimes(), 30000)
+      // 글꼴이 늦게 들어오면 크기가 달라진다
+      document.fonts?.ready?.then(() => { this.size = null; this.w.wake?.() })
     }
 
     sorted() {
-      return [...this.pending].sort((a, b) => (isNeed(b) - isNeed(a)) || (b.ts - a.ts))
+      return [...this.pending].sort((a, b) => (isActiveNeed(b) - isActiveNeed(a)) || (b.ts - a.ts))
     }
 
     // ---------- events ----------
 
     onNotify(n) {
-      if (!this.pending.some(p => p.id === n.id)) this.pending.unshift(n)
-      if (this.w.settings.dnd) { this.renderBadge(); return }
+      const i = this.pending.findIndex(p => p.id === n.id)
+      if (i < 0) this.pending.unshift(n); else this.pending[i] = n
+      // 방해 금지이거나 짧게 끝난 작업이면 배지만 올린다
+      if (this.w.settings.dnd || n.quiet) { this.renderBadge(); if (this.expanded) this.renderCards(); return }
       this.expand()
       clearTimeout(this.collapseTimer)
       if (!isNeed(n)) {
         // completions fold into the badge after a while; "needs you" cards stay
         this.collapseTimer = setTimeout(() => {
-          if (!this.pending.some(isNeed)) this.collapse()
+          if (!this.pending.some(isActiveNeed)) this.collapse()
         }, 9000)
       }
     }
@@ -102,10 +115,12 @@ window.CB = window.CB || {}
       if (this.pending.length === 0) this.collapse()
       else if (this.expanded || this.pending.length !== before) this.renderCards()
       this.renderBadge()
-      this.renderWorking(data.working || 0)
+      this.renderWorking(data.working || 0, data.sessions || [])
     }
 
     toggle() { this.expanded ? this.collapse() : this.expand() }
+
+    hasFreshNeed() { return this.pending.some(isFresh) }
 
     expand() {
       if (!this.pending.length) return
@@ -118,22 +133,32 @@ window.CB = window.CB || {}
       this.expanded = false
       this.stack.classList.remove('show')
       this.stack.replaceChildren()
+      this.shownIds = new Set()
+      this.size = null
       this.renderBadge()
     }
 
     // ---------- rendering ----------
 
     renderBadge() {
+      this.w.wake?.()
       const n = this.pending.length
-      const need = this.pending.some(isNeed)
       this.badge.textContent = n > 9 ? '9+' : String(n)
       this.badge.classList.toggle('show', n > 0 && !this.expanded)
-      this.badge.classList.toggle('need', need)
+      this.badge.classList.toggle('need', this.pending.some(isActiveNeed))
+      this.badge.classList.toggle('fresh', this.pending.some(isFresh))
     }
 
-    renderWorking(count) {
+    // 작업 중 표시: 세션 수와, 가장 오래 걸리고 있는 작업의 분
+    renderWorking(count, sessions = this.sessions || []) {
+      this.w.wake?.()
+      this.sessions = sessions
+      this.workingCount = count
+      const started = sessions.filter(s => s.status === 'working' && s.workStartedAt).map(s => s.workStartedAt)
+      const min = started.length ? Math.floor((Date.now() - Math.min(...started)) / 60000) : 0
+      const label = [count > 1 ? String(count) : '', min >= 1 ? `${min}분` : ''].filter(Boolean).join(' · ')
       this.working.classList.toggle('show', count > 0)
-      this.working.replaceChildren(el('span', 'dots', '•••'), el('span', 'cnt', count > 1 ? String(count) : ''))
+      this.working.replaceChildren(el('span', 'dots', '•••'), el('span', 'cnt', label))
     }
 
     card(n) {
@@ -141,11 +166,24 @@ window.CB = window.CB || {}
       const c = el('div', `card ${k.cls}`)
       c.dataset.hit = 'card'
       c.dataset.id = n.id
+      // 새로 나타난 카드만 들어오는 움직임을 쓴다 (다시 그릴 때마다 튀지 않게)
+      if (!this.shownIds.has(n.id)) c.classList.add('in')
+      if (isFresh(n)) c.classList.add('fresh')
+      if (snoozed(n)) c.classList.add('snoozed')
 
       const head = el('div', 'c-head')
       head.append(el('span', 'c-kind', `${k.icon} ${k.label}`))
-      const dur = n.kind === 'done' ? duration(n.durationMs) : ''
-      head.append(el('span', 'c-time', dur ? `${dur} 걸림 · ${ago(n.ts)}` : ago(n.ts)))
+      head.append(el('span', 'c-time', this.timeText(n)))
+      if (isActiveNeed(n)) {
+        const later = el('button', 'c-later', '10분 뒤')
+        later.title = '10분 뒤에 다시 알려 주기'
+        later.addEventListener('click', (e) => {
+          e.stopPropagation()
+          if (performance.now() - this.shownAt < ARM_MS) return
+          this.snooze(n.id)
+        })
+        head.append(later)
+      }
       const x = el('button', 'c-x', '×')
       x.title = '확인함'
       x.addEventListener('click', (e) => {
@@ -177,8 +215,15 @@ window.CB = window.CB || {}
       return c
     }
 
+    timeText(n) {
+      if (snoozed(n)) return `${Math.max(1, Math.ceil((n.snoozedUntil - Date.now()) / 60000))}분 뒤 다시 알림`
+      const dur = n.kind === 'done' ? duration(n.durationMs) : ''
+      return dur ? `${dur} 걸림 · ${ago(n.ts)}` : ago(n.ts)
+    }
+
     renderCards() {
       if (!this.expanded) return
+      this.w.wake?.()
       const list = this.sorted()
       const shown = list.slice(0, 3)
       const nodes = shown.map(n => this.card(n))
@@ -197,9 +242,22 @@ window.CB = window.CB || {}
       if (!this.stack.classList.contains('show')) { this.shownAt = performance.now(); this.side = null }
       this.stack.replaceChildren(...nodes)
       this.stack.classList.toggle('show', nodes.length > 0)
+      this.shownIds = new Set(shown.map(n => n.id))
+      this.size = null
     }
 
-    refreshTimes() { if (this.expanded) this.renderCards() }
+    // 30초마다: 카드를 다시 만들지 않고 시간 글자만 바꾼다
+    refreshTimes() {
+      if (this.workingCount) this.renderWorking(this.workingCount)
+      if (!this.expanded) return
+      for (const c of this.stack.querySelectorAll('.card')) {
+        const n = this.pending.find(p => p.id === c.dataset.id)
+        const t = c.querySelector('.c-time')
+        if (n && t) t.textContent = this.timeText(n)
+      }
+      this.size = null
+      this.w.wake?.()
+    }
 
     open(id) {
       CB.Sound.play('pop')
@@ -219,6 +277,15 @@ window.CB = window.CB || {}
       window.api.dismissNotification(id)
     }
 
+    // 10분 뒤에 다시: 그동안은 배지만 남는다 (main 이 시간이 되면 다시 알린다)
+    snooze(id) {
+      const n = this.pending.find(p => p.id === id)
+      if (n) n.snoozedUntil = Date.now() + CB.SNOOZE_MS
+      if (this.pending.some(isActiveNeed)) this.renderCards(); else this.collapse()
+      this.renderBadge()
+      window.api.snoozeNotification(id)
+    }
+
     // follow the pet every frame
     render() {
       const p = this.pet
@@ -235,9 +302,11 @@ window.CB = window.CB || {}
         const r = this.rect
         const hovering = r && c.x >= r.x && c.x <= r.x + r.w && c.y >= r.y && c.y <= r.y + r.h
         if (!hovering) {
-          const pos = place(this.w, p, this.stack.offsetWidth, this.stack.offsetHeight, this.side)
+          if (!this.size) this.size = { w: this.stack.offsetWidth, h: this.stack.offsetHeight }
+          const { w, h: sh } = this.size
+          const pos = place(this.w, p, w, sh, this.side)
           this.side = pos.side
-          this.rect = { x: pos.x, y: pos.y, w: this.stack.offsetWidth, h: this.stack.offsetHeight }
+          this.rect = { x: pos.x, y: pos.y, w, h: sh }
           this.stack.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`
         }
       } else this.rect = null

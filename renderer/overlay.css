@@ -117,10 +117,9 @@ html, body {
   display: none;
 }
 .badge.show { display: block; }
-.badge.need {
-  background: var(--need);
-  animation: pulse 1s steps(2) infinite;
-}
+.badge.need { background: var(--need); }
+/* 막 온 알림일 때만 몇 번 깜빡이고 멈춘다 */
+.badge.need.fresh { animation: pulse 1s steps(2) 6; }
 @keyframes pulse {
   50% { box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.45); }
 }
@@ -163,8 +162,8 @@ html, body {
   font-size: 12px;
   line-height: 1.35;
   cursor: pointer;
-  animation: cardIn 0.18s steps(3);
 }
+.card.in { animation: cardIn 0.18s steps(3); }
 .card::before {
   content: "";
   position: absolute;
@@ -173,7 +172,12 @@ html, body {
   background: var(--accent);
 }
 .card:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 rgba(42, 22, 18, 0.4); }
-.card.k-need { --accent: var(--need); animation: cardIn 0.18s steps(3), needGlow 1.2s steps(2) 0.2s infinite; }
+.card.k-need { --accent: var(--need); }
+/* 막 온 응답 필요 카드만 5번 깜빡인다. 그 뒤로는 빨간 띠로만 구분한다. */
+.card.k-need.fresh { animation: needGlow 1.2s steps(2) 0.2s 5; }
+.card.k-need.fresh.in { animation: cardIn 0.18s steps(3), needGlow 1.2s steps(2) 0.2s 5; }
+.card.snoozed { --accent: var(--muted); }
+.card.snoozed .c-msg { color: var(--muted); }
 .card.k-wait { --accent: var(--wait); }
 .card.k-info { --accent: var(--info); }
 
@@ -194,6 +198,18 @@ html, body {
   cursor: pointer;
 }
 .c-x:hover { color: var(--ink); }
+.c-later {
+  border: 1px solid #d9cbb8;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+  font-family: var(--px-small);
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.c-later:hover { color: var(--ink); border-color: var(--ink); }
 .c-where { display: flex; align-items: baseline; gap: 6px; margin-top: 3px; min-width: 0; }
 .c-proj { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .c-branch { color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -400,3 +416,9 @@ html, body {
 }
 .btn.ghost { background: #fff; color: var(--ink); }
 .btn:hover { filter: brightness(1.08); }
+
+/* ---------- 움직임 줄이기 (시스템 설정) ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .badge.need.fresh, .card.k-need.fresh, .card.k-need.fresh.in, .card.in, .working .dots, .menu.show, .g-result { animation: none; }
+}
