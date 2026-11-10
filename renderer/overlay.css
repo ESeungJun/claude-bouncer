@@ -138,9 +138,10 @@ html, body {
   pointer-events: none;
 }
 .working.show { display: flex; gap: 3px; align-items: center; }
-.working .dots { letter-spacing: 1px; color: var(--clay); animation: dots 1.2s steps(3) infinite; }
+.working .dots { letter-spacing: 1px; color: var(--clay); }
+/* 끝없이 도는 CSS 애니메이션은 화면을 계속 다시 그리게 한다. notify.js 가 1초에 한 번 바꾼다. */
+.working.dim .dots { opacity: 0.45; }
 .working .cnt:empty { display: none; }
-@keyframes dots { 0% { opacity: 0.35; } 50% { opacity: 1; } }
 
 /* ---------- notification cards ---------- */
 
@@ -422,5 +423,5 @@ html, body {
 /* ---------- 움직임 줄이기 (시스템 설정) ---------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .badge.need.fresh, .card.k-need.fresh, .card.k-need.fresh.in, .card.in, .working .dots, .menu.show, .g-result { animation: none; }
+  .badge.need.fresh, .card.k-need.fresh, .card.k-need.fresh.in, .card.in, .menu.show, .g-result { animation: none; }
 }

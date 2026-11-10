@@ -196,13 +196,9 @@
     c.y = y
   }
 
-  // Where a mouse event happened, in world coordinates. The small window
-  // moves with the pet, so positions inside it shift under a still cursor:
-  // take the screen position instead.
+  // Where a mouse event happened, in world coordinates.
   function at(e) {
-    return canCompact
-      ? { x: e.screenX - display.x, y: e.screenY - display.y }
-      : { x: e.clientX, y: e.clientY }
+    return { x: e.clientX + world.view.x, y: e.clientY + world.view.y }
   }
 
   function cursorFromEvent(e) {
@@ -213,10 +209,15 @@
   }
 
   document.addEventListener('mousemove', (e) => {
-    const { x, y } = cursorFromEvent(e)
+    let { x, y } = cursorFromEvent(e)
     hitTest()
     if (press) {
       wake()
+      // While dragging, the small window moves with the pet, so a position
+      // inside the window lags behind the cursor: go by how far the cursor
+      // has moved on the screen since the press.
+      x = press.x + (e.screenX - press.sx)
+      y = press.y + (e.screenY - press.sy)
       if (!press.dragging && Math.hypot(x - press.x, y - press.y) > 5) {
         press.dragging = true
         play.stop()
@@ -264,7 +265,7 @@
     }
     if (e.button !== 0) return
     if (!pet.contains(x, y)) return
-    press = { x, y, t: performance.now(), ox: x - pet.x, oy: y - pet.y, dragging: false }
+    press = { x, y, sx: e.screenX, sy: e.screenY, t: performance.now(), ox: x - pet.x, oy: y - pet.y, dragging: false }
     lastSample = null
     world.captureAll('press')
   })

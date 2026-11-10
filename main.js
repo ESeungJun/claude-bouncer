@@ -1199,6 +1199,7 @@ app.whenReady().then(() => {
   syncHook()
   registerIpc()
   createOverlay()
+  scheduleSnooze() // cards snoozed before the last quit
   registerHotkey()
   createTray()
   startFeeds()

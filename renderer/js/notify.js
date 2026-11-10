@@ -158,6 +158,9 @@ window.CB = window.CB || {}
       const min = started.length ? Math.floor((Date.now() - Math.min(...started)) / 60000) : 0
       const label = [count > 1 ? String(count) : '', min >= 1 ? `${min}분` : ''].filter(Boolean).join(' · ')
       this.working.classList.toggle('show', count > 0)
+      // the dots blink once a second, only while something is working
+      if (count > 0 && !this.dotsTimer && !this.w.reducedMotion) this.dotsTimer = setInterval(() => this.working.classList.toggle('dim'), 1000)
+      if (!count && this.dotsTimer) { clearInterval(this.dotsTimer); this.dotsTimer = null; this.working.classList.remove('dim') }
       this.working.replaceChildren(el('span', 'dots', '•••'), el('span', 'cnt', label))
     }
 
