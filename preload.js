@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // overlay plumbing
   setIgnoreMouse: (ignore) => ipcRenderer.send('mouse:ignore', !!ignore),
+  trackCursor: (on) => ipcRenderer.send('cursor:track', !!on),
   showPetMenu: () => ipcRenderer.send('menu:pet'),
   followDisplay: () => ipcRenderer.invoke('display:follow'),
   petAction: (a) => ipcRenderer.invoke('pet:action', a),
@@ -40,6 +41,7 @@ contextBridge.exposeInMainWorld('api', {
   // notifications / sessions
   openNotification: (id) => ipcRenderer.invoke('notif:open', id),
   dismissNotification: (id) => ipcRenderer.invoke('notif:dismiss', id),
+  snoozeNotification: (id) => ipcRenderer.invoke('notif:snooze', id),
   readAll: () => ipcRenderer.invoke('notif:readAll'),
   getHistory: () => ipcRenderer.invoke('history:get'),
   clearHistory: () => ipcRenderer.invoke('history:clear'),

@@ -252,6 +252,7 @@
     renderHotkey()
     document.querySelectorAll('[data-set]').forEach(i => { i.checked = !!settings[i.dataset.set] })
     document.querySelectorAll('#scale button').forEach(b => b.classList.toggle('on', Number(b.dataset.v) === settings.scale))
+    document.querySelectorAll('#done-min button').forEach(b => b.classList.toggle('on', Number(b.dataset.v) === settings.doneMin))
   }
   document.querySelectorAll('[data-set]').forEach(i => i.addEventListener('change', async () => {
     settings = await api.setSetting(i.dataset.set, i.checked)
@@ -259,6 +260,10 @@
   }))
   document.querySelectorAll('#scale button').forEach(b => b.addEventListener('click', async () => {
     settings = await api.setSetting('scale', Number(b.dataset.v))
+    renderSettings()
+  }))
+  document.querySelectorAll('#done-min button').forEach(b => b.addEventListener('click', async () => {
+    settings = await api.setSetting('doneMin', Number(b.dataset.v))
     renderSettings()
   }))
   // claude.ai extension
