@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert')
-const { isFrontTerminal } = require('../lib/focus')
+const { isFrontTerminal, frontChanged, terminalBundle } = require('../lib/focus')
 const { buildTerminal } = require('../lib/sessions')
 
 const front = (bundleId, session = '', tty = '', tab = true) => ({ bundleId, session, tty, tab })
@@ -33,4 +33,27 @@ test('other apps match as a whole app, by bundle id', () => {
   assert.ok(!isFrontTerminal(buildTerminal({ term_program: 'ghostty' }), front('com.mitchellh.ghostty')))
   assert.ok(!isFrontTerminal(buildTerminal({ source: 'web', browser: 'Chrome' }), front('com.google.Chrome')))
   assert.ok(!isFrontTerminal(orca, null))
+})
+
+test('switching apps always counts; switching tabs only when both looks read the tab', () => {
+  const iterm = 'com.googlecode.iterm2'
+  assert.ok(frontChanged(front('com.apple.Safari', '', '', false), front(iterm, 'A', '/dev/ttys001')))
+  assert.ok(frontChanged(front(iterm, 'A', '/dev/ttys001'), front(iterm, 'B', '/dev/ttys002')))
+  assert.ok(!frontChanged(front(iterm, 'A', '/dev/ttys001'), front(iterm, 'A', '/dev/ttys001')))
+  // the tab wasn't looked up last time (no card from this app then): a card
+  // that arrives while you sit in that tab must not be cleared by the next look
+  assert.ok(!frontChanged(front(iterm, '', '', false), front(iterm, 'A', '/dev/ttys001')))
+  assert.ok(!frontChanged(front(iterm, 'A', '/dev/ttys001'), front(iterm, '', '', false)))
+  // first look, or a look that failed
+  assert.ok(!frontChanged(null, front(iterm, 'A', '/dev/ttys001')))
+  assert.ok(!frontChanged(front(iterm, 'A', '/dev/ttys001'), null))
+})
+
+test('terminalBundle names the app a card came from', () => {
+  assert.strictEqual(terminalBundle(buildTerminal({ term_program: 'iTerm.app', tty: '/dev/ttys004' })), 'com.googlecode.iterm2')
+  assert.strictEqual(terminalBundle(buildTerminal({ term_program: 'Apple_Terminal' })), 'com.apple.Terminal')
+  assert.strictEqual(terminalBundle(buildTerminal({ bundle_id: 'com.stablyai.orca', orca_pane: 'a:b' })), 'com.stablyai.orca')
+  assert.strictEqual(terminalBundle(buildTerminal({ term_program: 'ghostty' })), '')
+  assert.strictEqual(terminalBundle(buildTerminal({ source: 'web', browser: 'Chrome' })), '')
+  assert.strictEqual(terminalBundle(null), '')
 })

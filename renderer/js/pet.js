@@ -7,11 +7,15 @@
 window.CB = window.CB || {}
 
 ;(function () {
-  const { Sprites, Sound } = CB
+  const { Sprites, Sound, Pace } = CB
   const rand = (a, b) => a + Math.random() * (b - a)
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)]
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
   const GRAVITY = 1500
+  const NUDGE_SEC = 6 // 응답 필요 알림이 온 뒤 이 시간 동안만 계속 점프한다
+  const CALM_SEC = 60 // 그 뒤로는 이 간격으로 한 번씩만
+  const dpr = window.devicePixelRatio || 1
+  const snap = (v) => Math.round(v * dpr) / dpr // 물리 픽셀에 맞춘다
 
   const LINES = {
     click: ['헤헤', '왜~?', '!', '히히', '간지러워!', '응?', '뀨'],
@@ -193,6 +197,8 @@ window.CB = window.CB || {}
     // ---------- speech + emotes ----------
 
     say(text, ms = 2200) {
+      this.w.wake?.()
+      this.bubbleSize = null
       this.bubble.textContent = text
       this.bubble.classList.add('show')
       this.sayTimer = ms / 1000
@@ -222,7 +228,10 @@ window.CB = window.CB || {}
     // ---------- physics helpers ----------
 
     hop(v = 300) {
+      this.w.wake?.()
       if (this.z > 1) return
+      // "reduce motion" is on: no hopping outside of games
+      if (this.w.reducedMotion && !this.w.play?.busy()) return
       this.vz = v
       this.squash = -0.12
       Sound.play('jump')
@@ -232,6 +241,8 @@ window.CB = window.CB || {}
     // Each activity: { name, t, update(dt) -> true when finished, pose() }
 
     setAct(act) {
+      // 쉬고 있던 프레임 루프를 먼저 깨운다 (쉰 시간은 이전 동작에 반영된다)
+      this.w.wake?.()
       this.act?.exit?.()
       act.t = 0
       this.act = act
@@ -291,7 +302,7 @@ window.CB = window.CB || {}
         update: (dt) => {
           const a = this.act
           a.zT -= dt
-          if (a.zT <= 0) { this.emote('z'); a.zT = 2.2 }
+          if (a.zT <= 0) { this.emote('z'); a.zT = 8 }
           if (this.stats.energy >= 99 && a.t > 20) return true
           return a.t >= a.dur && !(this.w.idleSec > 120)
         },
@@ -442,13 +453,16 @@ window.CB = window.CB || {}
     }
 
     // Waiting next to the person, looking at them (optionally hopping).
-    attend({ dur = 6, hopEvery = 0, expr = 'normal', line } = {}) {
+    // `until` ends the wait early (e.g. the card it waits for was answered).
+    attend({ dur = 6, hopEvery = 0, expr = 'normal', line, until } = {}) {
       if (line) this.say(line, dur * 1000)
       return this.setAct({
-        name: 'attend', dur, hopT: hopEvery,
+        name: 'attend', dur, hopEvery, hopT: hopEvery,
         update: (dt) => {
           const a = this.act
-          if (hopEvery) { a.hopT -= dt; if (a.hopT <= 0) { a.hopT = hopEvery; this.hop(260) } }
+          if (until?.()) return true
+          // 자리를 비운 동안에는 뛰지 않는다
+          if (hopEvery) { a.hopT -= dt; if (a.hopT <= 0) { a.hopT = hopEvery; if (this.w.idleSec < 60) this.hop(260) } }
           return a.t >= a.dur
         },
         pose: () => ({ expr, mouth: expr === 'wide' ? 'o' : undefined, armL: this.z > 0 ? 'up' : 'mid', armR: this.z > 0 ? 'up' : 'mid' }),
@@ -464,16 +478,25 @@ window.CB = window.CB || {}
       const mood = this.mood()
       const quiet = w.settings.dnd
       const userActive = w.idleSec < 30 && w.cursor.inside
-      const needsYou = w.data.pending.some(n => n.kind !== 'done')
+      const now = Date.now()
+      const waiting = () => w.data.pending.filter(n => n.kind !== 'done' && !(n.snoozedUntil > Date.now()))
+      const needs = waiting()
+      const needsYou = needs.length > 0
 
       if (w.play?.busy()) return this.idle(1)
       if (w.idleSec > 240 || (mood === 'sleepy' && !needsYou)) return this.sleep(rand(90, 240))
       if (quiet) return Math.random() < 0.7 ? this.sit(rand(10, 30)) : this.idle(rand(3, 8))
 
-      // a notification is still waiting for an answer: stay close and keep nudging
+      // a notification is still waiting for an answer: stay close. Keep
+      // hopping only for the first few seconds, then wait quietly and nudge
+      // once a minute.
       if (needsYou) {
-        if (w.settings.roam && this.distTo(w.cursor.x, w.cursor.y) > 260 && userActive) return this.approachUser({ then: () => this.attend({ dur: 4, hopEvery: 2, expr: 'wide' }) })
-        return this.attend({ dur: 5, hopEvery: 2.5, expr: 'wide' })
+        const fresh = needs.some(n => now - (n.nudgedAt || n.ts) < NUDGE_SEC * 1000)
+        const wait = () => fresh
+          ? this.attend({ dur: 4, hopEvery: 2, expr: 'wide' })
+          : this.attend({ dur: CALM_SEC, hopEvery: CALM_SEC, until: () => !waiting().length })
+        if (w.canRoam?.() && this.distTo(w.cursor.x, w.cursor.y) > 260 && userActive) return this.approachUser({ then: wait })
+        return wait()
       }
 
       if (w.data.working > 0 && Math.random() < 0.3) {
@@ -482,22 +505,26 @@ window.CB = window.CB || {}
       }
 
       // focus mode: never walk over to ask for food or play
-      const wantsCompany = !w.settings.focus && (mood === 'hungry' || mood === 'bored' || Math.random() < 0.04)
+      // and not while a Claude session is working
+      const wantsCompany = !w.settings.focus && !w.data.working && (mood === 'hungry' || mood === 'bored' || Math.random() < 0.04)
       if (wantsCompany && userActive && w.uptime > this.nextInviteAt) {
         this.nextInviteAt = w.uptime + rand(10, 18) * 60
         return this.approachUser({ then: () => w.invite(mood === 'hungry' ? 'hungry' : 'play') })
       }
 
-      if (!w.settings.roam) return Math.random() < 0.4 ? this.sit() : this.idle(rand(3, 7))
+      // typing (recent input, cursor at rest): don't wander through the view
+      const typing = w.idleSec < 5 && w.uptime - w.cursor.movedAt > 5
+      if (!w.canRoam?.() || typing) return Math.random() < 0.4 ? this.sit() : this.idle(rand(3, 7))
 
       const r = Math.random()
-      if (r < 0.5) {
+      if (r < 0.25) {
+        // a walk, then a longer rest
         const p = this.randomSpot()
-        return this.walkTo(p.x, p.y)
+        return this.walkTo(p.x, p.y, { then: () => (Math.random() < 0.5 ? this.sit(rand(6, 12)) : this.idle(rand(4, 9))) })
       }
-      if (r < 0.62) return this.sit()
-      if (r < 0.7) { this.hop(240); return this.idle(1.2) }
-      if (r < 0.75 && mood === 'ok') { this.emote('♪'); return this.wave(1.4) }
+      if (r < 0.37) return this.sit()
+      if (r < 0.45) { this.hop(240); return this.idle(1.2) }
+      if (r < 0.5 && mood === 'ok') { this.emote('♪'); return this.wave(1.4) }
       return this.idle()
     }
 
@@ -510,10 +537,12 @@ window.CB = window.CB || {}
         if (this.act.update(dt)) this.think()
       } else this.think()
 
-      // vertical physics (hops)
+      // vertical physics (hops). After a rest dt covers the whole rest; a hop
+      // that starts in this very update must not be over before it is drawn.
       if (this.z > 0 || this.vz > 0) {
-        this.vz -= GRAVITY * dt
-        this.z += this.vz * dt
+        const pdt = Math.min(dt, 0.05)
+        this.vz -= GRAVITY * pdt
+        this.z += this.vz * pdt
         if (this.z <= 0) {
           this.z = 0
           this.vz = 0
@@ -521,6 +550,7 @@ window.CB = window.CB || {}
         }
       }
       this.squash *= Math.pow(0.0008, dt)
+      if (Math.abs(this.squash) < 0.004) this.squash = 0
 
       // blinking
       this.blinkAt -= dt
@@ -533,16 +563,21 @@ window.CB = window.CB || {}
       }
     }
 
+    // where the eyes point for the cursor right now: 'lx,ly', '' = not looking at it
+    gaze() {
+      const c = this.w.cursor
+      if (!c.inside || this.distTo(c.x, c.y) >= 500) return ''
+      const dx = c.x - this.x
+      const dy = c.y - (this.y - this.ph / 2)
+      return `${Math.abs(dx) > 30 ? Math.sign(dx) : 0},${dy < -60 ? -1 : dy > 40 ? 1 : 0}`
+    }
+
     currentPose() {
       const p = { ...(this.act?.pose?.() || {}) }
+      this.lastGaze = ''
       if (this.act?.look) {
-        const c = this.w.cursor
-        if (c.inside && this.distTo(c.x, c.y) < 500) {
-          const dx = c.x - this.x
-          const dy = c.y - (this.y - this.ph / 2)
-          p.lx = Math.abs(dx) > 30 ? Math.sign(dx) : 0
-          p.ly = dy < -60 ? -1 : dy > 40 ? 1 : 0
-        }
+        const g = this.lastGaze = this.gaze()
+        if (g) { const [lx, ly] = g.split(',').map(Number); p.lx = lx; p.ly = ly }
       }
       if (this.blinkT > 0 && (!p.expr || p.expr === 'normal')) p.expr = 'blink'
       // drawn characters: waddle instead of swapping walk frames, and face the way we go
@@ -574,12 +609,12 @@ window.CB = window.CB || {}
         Sprites.blit(this.canvas, Sprites.petCanvas(spriteOpts), this.scale)
         this.lastPose = key
       }
-      const left = this.x - this.pw / 2
-      const top = this.y - this.ph
+      const left = snap(this.x - this.pw / 2)
+      const top = snap(this.y - this.ph)
       this.el.style.transform = `translate3d(${left}px, ${top}px, 0)`
       let sx = 1 + this.squash
       let sy = 1 - this.squash
-      if (breathe) { const b = Math.sin(this.t * 2.2) * 0.03; sx += b; sy -= b }
+      if (breathe) { const b = Pace.breath(this.t); sx += b; sy -= b }
       this.body.style.transform =
         `translateY(${-this.z - bob * this.scale}px) rotate(${tilt}deg) scale(${(flip ? -sx : sx).toFixed(3)}, ${sy.toFixed(3)})`
       const shadowScale = Math.max(0.4, 1 - this.z / 200)
@@ -588,9 +623,11 @@ window.CB = window.CB || {}
 
       if (this.bubble.classList.contains('show')) {
         const h = this.head()
-        const bw = this.bubble.offsetWidth
+        // measured once per line, not every frame
+        if (!this.bubbleSize) this.bubbleSize = { w: this.bubble.offsetWidth, h: this.bubble.offsetHeight }
+        const bw = this.bubbleSize.w
         const bx = clamp(h.x - bw / 2, 4, this.w.w - bw - 4)
-        const by = Math.max(4, h.y - this.bubble.offsetHeight - 2 * this.scale - 26)
+        const by = Math.max(4, h.y - this.bubbleSize.h - 2 * this.scale - 26)
         this.bubble.style.transform = `translate3d(${bx}px, ${by}px, 0)`
       }
     }

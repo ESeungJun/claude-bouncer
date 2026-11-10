@@ -8,9 +8,11 @@
 
 [English](README.md) · 한국어
 
+📝 만든 이야기: [velog](https://velog.io/@haul/claude-bouncer-desktop-pet)
+
 ![macOS](https://img.shields.io/badge/macOS-supported-black?logo=apple)
 ![Windows](https://img.shields.io/badge/Windows-supported-0078D6?logo=windows)
-![Electron](https://img.shields.io/badge/Electron-32-47848F?logo=electron&logoColor=white)
+![Electron](https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 <img src="docs/notify-cards.png" width="300" alt="알림 카드" />
@@ -50,6 +52,8 @@ Claude Bouncer는 바탕화면에 작은 도트 펫을 띄워요. 평소엔 화�
 | **출처가 보이는 카드** | 종류(작업 완료 · 권한 요청 · 입력 대기), 프로젝트, git 브랜치, 내가 보낸 요청, 결과 요약, 걸린 시간, 터미널 앱과 탭(tty · tmux pane) |
 | **원클릭 이동** | iTerm2 · macOS 터미널은 정확한 탭까지, tmux는 pane까지, VS Code · Cursor · Warp · Ghostty · JetBrains 등은 앱을 앞으로 |
 | **처리할 때까지 유지** | 권한 · 입력 요청은 펫이 옆에서 기다리며 남아 있고, 그 세션에 다시 입력하거나 카드를 눌러 이동하면 그 세션의 카드와 알림 센터 알림이 함께 정리돼요. macOS에서는 그 터미널로 직접 전환해도 정리돼요(iTerm2 · 터미널은 탭 단위, 그 밖의 앱은 앱 단위). 작업이 끝난 뒤 1분쯤 지나 오는 "입력을 기다려요" 알림은 완료 카드와 겹쳐서 띄우지 않아요 |
+| **덜 시끄럽게** | 응답이 필요한 카드는 처음 몇 초만 뛰고 그 뒤로는 조용히 기다려요. 카드의 **10분 뒤**를 누르면 그동안 배지만 남고, 시간이 되면 한 번 더 알려요. 짧게 끝난 작업(기본 30초 미만)은 달려오지 않고 배지만 올려요 |
+| **워크트리 구분** | 워크트리나 저장소 안 하위 폴더에서 돌린 세션은 `저장소 › 워크트리`로 적고, 세션 탭에서 같은 저장소끼리 묶어요 |
 | **한눈에** | 펫 머리 위 배지, 메뉴바 카운트, 작업 중인 세션이 있으면 `•••` 말풍선 |
 | **자리 비움 요약** | 돌아오면 "자리 비운 사이 알림 3개 왔어!" |
 | **세션 패널** | 열려 있는 세션 전체 현황 (작업 중 · 응답 필요 · 끝남) |
@@ -144,7 +148,7 @@ npm run pack       # 빠른 테스트용 .app
 | <kbd>⌥</kbd><kbd>⇧</kbd><kbd>C</kbd> | 커서 앞으로 부르기 (한 번 더 누르면 카드 닫기) |
 | 메뉴바 아이콘 | 패널 · 부르기 · 놀기 · 방해 금지 · 집중 모드 · 돌아다니기 · 테스트 알림 · 훅 관리 |
 
-**패널 탭:** 🔔 알림 · 🖥 세션 · 🐾 펫 (상태 · 놀기 · 나만의 캐릭터) · ⚙ 설정 (크기 · 돌아다니기(끄면 알림이 와도 마우스 쪽으로 오지 않고 제자리에서 알려요) · 효과음 · 시스템 알림 · 방해 금지 · 집중 모드 · 로그인 시 실행 · 부르기 단축키)
+**패널 탭:** 🔔 알림 · 🖥 세션 · 🐾 펫 (상태 · 놀기 · 나만의 캐릭터) · ⚙ 설정 (크기 · 돌아다니기(끄면 알림이 와도 마우스 쪽으로 오지 않고 제자리에서 알려요) · 완료 알림에 달려오기(항상 · 30초 이상 · 2분 이상) · 효과음 · 시스템 알림 · 방해 금지 · 집중 모드 · 로그인 시 실행 · 부르기 단축키)
 
 ## claude.ai 웹 연결
 
@@ -197,7 +201,7 @@ Claude Code ──훅──▶ send-notify.sh/.ps1 ──POST 127.0.0.1:17891─
 1. 앱이 실행될 때 `~/.claude/settings.json`에 `Stop` · `Notification` · `UserPromptSubmit` · `SessionEnd` 훅 4개를 등록해요. 다른 훅은 건드리지 않고 자기 것만 갱신해요.
 2. 훅 스크립트(macOS·Linux는 `send-notify.sh`, Windows는 `send-notify.ps1` — Node.js 불필요)가 이벤트에 "어디서 왔는지"(터미널 앱, 탭의 tty, tmux · Orca 패널)를 붙여 사용자별 토큰과 함께 앱으로 보내요. 앱이 꺼져 있어도 Claude 세션엔 아무 영향이 없어요.
 3. 앱이 세션별 상태를 추적하고, 대화 기록에서 마지막 요청과 결과 요약을 읽어 카드를 만들어요.
-4. 펫은 화면 전체를 덮는 투명 창 위에서 움직이고, 펫 · 카드 · 메뉴 위에서만 마우스를 받아요. 나머지 클릭은 그대로 아래 앱으로 통과해요.
+4. 펫은 투명 창 위에서 움직이고, 펫 · 카드 · 메뉴 위에서만 마우스를 받아요. 나머지 클릭은 그대로 아래 앱으로 통과해요. macOS에서는 펫만 있을 때 펫 둘레의 작은 창을 쓰고, 카드 · 메뉴 · 놀이 때만 화면 전체로 키워요. 펫이 가만히 있으면 화면을 다시 그리지 않아요.
 
 **감지 범위**
 
@@ -259,7 +263,7 @@ macOS: `lsof -i :17891` · Windows: `netstat -ano | findstr :17891` — 충돌�
 
 ```bash
 npm start          # 소스로 실행
-npm test           # 단위 테스트: 세션, 서버, 저장소, 스프라이트, 스킨, Higgsfield 클라이언트
+npm test           # 단위 테스트: 세션, 서버, 저장소, 탭 이동, 업데이트, 스프라이트, 스킨, Higgsfield 클라이언트
 npm run sprites    # docs/sprite-sheet.png 다시 만들기
 npm run template   # assets/skin-template.png 다시 만들기 (Higgsfield에 보내는 템플릿)
 ```
@@ -278,6 +282,10 @@ lib/
   focus.js              알맞은 터미널 탭으로 이동
   higgsfield-mcp.js     MCP(OAuth)로 Higgsfield 연결 — 나만의 캐릭터
   higgsfield.js         Higgsfield API 키 클라이언트 + 프롬프트
+  skins.js              기본 캐릭터 + 사진 캐릭터 검사
+  request.js            "직접 요청하기" — FormSubmit으로 사진 보내기
+  actions.js            트레이·메뉴·패널이 함께 쓰는 놀이 동작 목록
+  update.js             업데이트 확인, 다운로드, SHA256SUMS 검사, 교체
   store.js              JSON 저장
 extension/              claude.ai 브라우저 확장 (MV3)
 renderer/

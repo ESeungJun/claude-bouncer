@@ -3,22 +3,34 @@
 
 ;(async function () {
   const api = window.api
-  const { Pet, Notify, Play, Sound } = CB
+  const { Pet, Notify, Play, Sound, Pace } = CB
   const { clamp, pick, rand } = CB.util
   const layer = document.getElementById('layer')
 
   const state = await api.getState()
 
+  // The world is the whole work area of the screen the pet is on. The window
+  // usually shows only a small part of it around the pet (world.view) and
+  // follows the pet; `display` says where that work area sits on the desktop.
+  let display = { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight, epoch: 0, compact: false, ...(state.display || {}) }
+  const canCompact = !!display.compact
+  const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+
   const world = {
-    w: window.innerWidth,
-    h: window.innerHeight,
+    w: display.width,
+    h: display.height,
     layer,
     settings: state.settings,
     data: { pending: state.pending || [], sessions: state.sessions || [], working: state.working || 0 },
-    cursor: { x: window.innerWidth / 2, y: window.innerHeight / 2, inside: false, movedAt: 0 },
+    cursor: { x: display.width / 2, y: display.height / 2, inside: false, movedAt: 0 },
     idleSec: 0,
     uptime: 0,
+    view: { x: 0, y: 0, w: display.width, h: display.height, full: true },
+    reducedMotion: motionQuery.matches,
   }
+  // the pet walks over to you only when roaming is on and motion isn't reduced
+  world.canRoam = () => world.settings.roam && !world.reducedMotion
+  motionQuery.addEventListener('change', (e) => { world.reducedMotion = e.matches })
   CB.world = world
   Sound.setEnabled(state.settings.sound)
   CB.Sprites.setSkin(state.skin)
@@ -42,13 +54,22 @@
     const c = world.cursor
     let hit = captures.size > 0
     if (!hit && c.inside) {
-      const node = document.elementFromPoint(c.x, c.y)
+      const node = document.elementFromPoint(c.x - world.view.x, c.y - world.view.y)
       hit = !!(node && node.closest('[data-hit]'))
     }
     if (hit === ignoring) {
       ignoring = !hit
       api.setIgnoreMouse(ignoring)
     }
+  }
+  // The cursor feed from main and the DOM event often report the same spot:
+  // test what is under the cursor once per spot, not once per report.
+  const tested = { x: NaN, y: NaN, inside: false }
+  function hitTest() {
+    const c = world.cursor
+    if (c.x === tested.x && c.y === tested.y && c.inside === tested.inside) return
+    tested.x = c.x; tested.y = c.y; tested.inside = c.inside
+    syncHit()
   }
   world.captureAll = (key) => { captures.add(key); syncHit() }
   world.releaseCapture = (key) => { captures.delete(key); syncHit() }
@@ -175,16 +196,29 @@
     c.y = y
   }
 
+  // Where a mouse event happened, in world coordinates.
+  function at(e) {
+    return { x: e.clientX + world.view.x, y: e.clientY + world.view.y }
+  }
+
   function cursorFromEvent(e) {
-    moveCursor(e.clientX, e.clientY)
+    const p = at(e)
+    moveCursor(p.x, p.y)
     world.cursor.inside = true
+    return p
   }
 
   document.addEventListener('mousemove', (e) => {
-    cursorFromEvent(e)
-    syncHit()
+    let { x, y } = cursorFromEvent(e)
+    hitTest()
     if (press) {
-      if (!press.dragging && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 5) {
+      wake()
+      // While dragging, the small window moves with the pet, so a position
+      // inside the window lags behind the cursor: go by how far the cursor
+      // has moved on the screen since the press.
+      x = press.x + (e.screenX - press.sx)
+      y = press.y + (e.screenY - press.sy)
+      if (!press.dragging && Math.hypot(x - press.x, y - press.y) > 5) {
         press.dragging = true
         play.stop()
         closeMenu()
@@ -194,18 +228,19 @@
         const now = performance.now()
         if (lastSample) {
           const dt = Math.max(1, now - lastSample.t) / 1000
-          pet.act.vx = (e.clientX - lastSample.x) / dt * 0.6 + (pet.act.vx || 0) * 0.4
-          pet.act.vy = (e.clientY - lastSample.y) / dt * 0.6 + (pet.act.vy || 0) * 0.4
+          pet.act.vx = (x - lastSample.x) / dt * 0.6 + (pet.act.vx || 0) * 0.4
+          pet.act.vy = (y - lastSample.y) / dt * 0.6 + (pet.act.vy || 0) * 0.4
         }
-        lastSample = { x: e.clientX, y: e.clientY, t: now }
-        pet.x = e.clientX - press.ox
-        pet.y = e.clientY - press.oy
+        lastSample = { x, y, t: now }
+        pet.x = x - press.ox
+        pet.y = y - press.oy
         pet.clampPos()
       }
       return
     }
+    nudge()
     // petting: rubbing back and forth over the pet
-    if (pet.contains(e.clientX, e.clientY) && !play.busy()) {
+    if (pet.contains(x, y) && !play.busy()) {
       const dir = Math.sign(e.movementX)
       const now = performance.now()
       if (now - strokes.since > 1400) { strokes.flips = 0; strokes.since = now }
@@ -220,22 +255,24 @@
   })
 
   document.addEventListener('mousedown', (e) => {
-    cursorFromEvent(e)
+    wake()
+    const { x, y } = cursorFromEvent(e)
     if (play.mode === 'holding') { play.dropFood(); return }
     if (play.game) {
       if (e.target.closest('button')) return
-      play.onGameClick(e.clientX, e.clientY)
+      play.onGameClick(x, y)
       return
     }
     if (e.button !== 0) return
-    if (!pet.contains(e.clientX, e.clientY)) return
-    press = { x: e.clientX, y: e.clientY, t: performance.now(), ox: e.clientX - pet.x, oy: e.clientY - pet.y, dragging: false }
+    if (!pet.contains(x, y)) return
+    press = { x, y, sx: e.screenX, sy: e.screenY, t: performance.now(), ox: x - pet.x, oy: y - pet.y, dragging: false }
     lastSample = null
     world.captureAll('press')
   })
 
   document.addEventListener('mouseup', (e) => {
     if (!press) return
+    wake()
     const p = press
     press = null
     world.releaseCapture('press')
@@ -262,7 +299,8 @@
 
   document.addEventListener('contextmenu', (e) => {
     e.preventDefault()
-    if (pet.contains(e.clientX, e.clientY)) api.showPetMenu()
+    const { x, y } = at(e)
+    if (pet.contains(x, y)) api.showPetMenu()
   })
 
   // ---------- events from main ----------
@@ -272,11 +310,13 @@
     moveCursor(c.x, c.y)
     world.cursor.inside = c.inside
     if (moved) world.cursor.movedAt = world.uptime
-    if (!press) syncHit()
+    if (!press) hitTest()
+    nudge()
   })
 
   let wasAway = false
   api.onIdle((sec) => {
+    wake()
     const prev = world.idleSec
     world.idleSec = sec
     if (sec > 240) wasAway = true
@@ -291,14 +331,16 @@
           notify.expand()
         } else pet.wave(2.4, pick(Pet.LINES.welcome))
       }
-      if (world.settings.roam) pet.approachUser({ then: greet })
+      if (world.canRoam()) pet.approachUser({ then: greet })
       else greet()
     }
   })
 
   api.onNotify((n) => {
+    wake()
     notify.onNotify(n)
-    if (world.settings.dnd) return
+    // a short task that just finished: the badge is enough
+    if (world.settings.dnd || n.quiet) return
     closeMenu()
     if (play.game) return // don't yank the pet out of a game; the card still shows
     play.stop()
@@ -311,16 +353,18 @@
       else pet.celebrate(1.6, { emote: 'star' })
     }
     // roaming off: alert from where it stands instead of running to the cursor
-    if (world.settings.roam && world.cursor.inside) pet.approachUser({ run: true, then: arrive, giveUp: 6 })
+    if (world.canRoam() && world.cursor.inside) pet.approachUser({ run: true, then: arrive, giveUp: 6 })
     else arrive()
   })
 
   api.onData((d) => {
+    wake()
     world.data = d
     notify.onData(d)
   })
 
   api.onSkin((skin) => {
+    wake()
     CB.Sprites.setSkin(skin)
     pet.setScale(world.settings.scale)
     if (world.settings.dnd) return
@@ -331,10 +375,12 @@
   })
 
   api.onSessionBusy(() => {
+    wake()
     if (pet.act?.name === 'idle' && Math.random() < 0.5) pet.work()
   })
 
   api.onSettings((s) => {
+    wake()
     const scaleChanged = s.scale !== world.settings.scale
     world.settings = s
     Sound.setEnabled(s.sound)
@@ -345,8 +391,12 @@
   })
 
   api.onDisplay((d) => {
+    wake()
+    display = { ...display, ...d }
     world.w = d.width
     world.h = d.height
+    // main put the window back over the whole work area
+    resetView()
     // the cursor feed for the new screen is ~33 ms away; use the position main sent
     if (d.cursor) { world.cursor.x = d.cursor.x; world.cursor.y = d.cursor.y; world.cursor.inside = true }
     if (d.reason === 'notify' || d.reason === 'summon' || d.reason === 'follow') {
@@ -359,6 +409,7 @@
   })
 
   api.onAction((a) => {
+    wake()
     closeMenu()
     if (a === 'summon') return summon()
     if (ACTIONS[a] && a !== 'panel') ACTIONS[a]()
@@ -403,39 +454,196 @@
   }
 
   window.addEventListener('resize', () => {
+    // with the small window the world size comes from main, not from the window
+    if (canCompact) return
+    wake()
     world.w = window.innerWidth
     world.h = window.innerHeight
     pet.clampPos()
   })
 
-  // ---------- frame loop ----------
+  // ---------- window size ----------
+  // Alone, the pet lives in a small window that follows it, so the system
+  // only has to blend that small area. Cards, the menu and games need room:
+  // the window grows to the whole work area while they are up.
 
+  const fullView = () => ({ x: 0, y: 0, w: world.w, h: world.h, full: true })
+  let viewGen = 0 // bumped to drop a switch that is under way
+  let viewBusy = false
+  let viewRetryAt = 0
+  let shrinkAt = 0 // uptime after which the window may go small again
+
+  function applyView(v) {
+    world.view = v
+    layer.style.transform = v.x || v.y ? `translate(${-v.x}px, ${-v.y}px)` : ''
+  }
+
+  function resetView() {
+    viewGen++
+    viewBusy = false
+    layer.style.visibility = ''
+    applyView(fullView())
+    shrinkAt = world.uptime + 0.6
+  }
+
+  const nextFrames = (n) => Promise.race([
+    new Promise((resolve) => { const f = () => (--n > 0 ? requestAnimationFrame(f) : resolve()); requestAnimationFrame(f) }),
+    new Promise((resolve) => setTimeout(resolve, 250)),
+  ])
+
+  // Resize / jump the window. The window and its content can't change in the
+  // same instant, so the layer is hidden for the few frames in between —
+  // otherwise the pet would flash in the wrong place.
+  async function switchView(target) {
+    viewBusy = true
+    const gen = ++viewGen
+    layer.style.visibility = 'hidden'
+    await nextFrames(2)
+    if (gen !== viewGen) return
+    let ok = false
+    try { ok = await api.setView({ x: target.x, y: target.y, w: target.w, h: target.h, epoch: display.epoch }) } catch {}
+    if (gen !== viewGen) return
+    if (ok) {
+      applyView(target)
+      // wait until the page has the new size before showing it again
+      for (let i = 0; i < 12 && (window.innerWidth !== target.w || window.innerHeight !== target.h); i++) {
+        await nextFrames(1)
+        if (gen !== viewGen) return
+      }
+    } else viewRetryAt = world.uptime + 0.5
+    layer.style.visibility = ''
+    viewBusy = false
+    wake()
+  }
+
+  // → true while a change of size is still coming (keep the frames going)
+  function syncView() {
+    if (!canCompact) return false
+    if (viewBusy) return true
+    const v = world.view
+    const c = Pace.compactView(pet, world)
+    const bubbleW = pet.bubble.classList.contains('show') ? (pet.bubbleSize?.w || 0) : 0
+    if (Pace.needsFullView({ expanded: notify.expanded, menuOpen, busy: play.busy(), bubbleW }, c)) {
+      shrinkAt = world.uptime + 0.6
+      if (!v.full && world.uptime >= viewRetryAt) switchView(fullView())
+      return !v.full
+    }
+    if (v.full) {
+      // a moment later, so a card that closes and reopens doesn't flicker
+      if (world.uptime >= shrinkAt && world.uptime >= viewRetryAt) switchView({ ...c, full: false })
+      return true
+    }
+    if (c.w !== v.w || c.h !== v.h) {
+      if (world.uptime >= viewRetryAt) switchView({ ...c, full: false })
+      return true
+    }
+    if (c.x !== v.x || c.y !== v.y) {
+      // same size: the window just follows the pet, which stays put inside it
+      applyView({ ...c, full: false })
+      api.moveView({ x: c.x, y: c.y, epoch: display.epoch })
+    }
+    return false
+  }
+
+  // ---------- frame loop ----------
+  // Frames are drawn only while something moves. When the pet is still, the
+  // loop stops and one timer wakes it for the next thing due (the end of the
+  // current activity, a blink, a speech bubble going away). Anything that
+  // changes the scene from outside calls wake() first.
+
+  const REST_DT_MAX = 30
   let last = performance.now()
+  let lastDrawn = 0 // when the last step ran (wall clock, for pacing)
   let needTick = 0
-  // One bad frame (e.g. a broken skin) must not freeze the pet for good:
-  // schedule the next frame first, and contain errors per frame.
   let frameErrors = 0
-  function frame(now) {
-    requestAnimationFrame(frame)
-    try { step(now) } catch (e) {
+  let rafOn = false
+  let resting = false
+  let restTimer = null
+  let viewPending = false
+  let tracking = false
+
+  const paceState = () => ({
+    act: pet.act, z: pet.z, vz: pet.vz, squash: pet.squash,
+    blinkAt: pet.blinkAt, blinkT: pet.blinkT, sayTimer: pet.sayTimer, t: pet.t,
+    busy: play.busy(), menuOpen, pressing: !!press, needTick,
+  })
+
+  // Ask for the next frame. Walking and hopping are drawn 30 times a second.
+  // Most of the gap is waited out on a timer, so a 120 Hz display doesn't call
+  // back four times for every frame that is drawn; the timer ends early
+  // enough to catch the screen refresh the frame is meant for, and frame()
+  // skips a refresh that comes too soon.
+  function schedule() {
+    if (rafOn) return
+    rafOn = true
+    const wait = Pace.frameGap(paceState()) - (performance.now() - lastDrawn) - 12
+    if (wait > 2) setTimeout(() => requestAnimationFrame(frame), wait)
+    else requestAnimationFrame(frame)
+  }
+
+  // One bad frame (e.g. a broken skin) must not freeze the pet for good:
+  // contain errors per step and keep the loop going.
+  function safeStep(now, maxDt) {
+    try { step(now, maxDt); return true } catch (e) {
       if (frameErrors++ < 5) console.error('[claude-bouncer] frame error:', e)
       if (frameErrors === 20 && CB.Sprites.getSkin()) {
         // a look that can't be drawn: fall back to the classic Claude
         CB.Sprites.setSkin(null)
         pet.setScale(world.settings.scale)
       }
+      return false
     }
   }
-  function step(now) {
-    const dt = Math.min(0.05, (now - last) / 1000)
+
+  // Stop drawing until something is due.
+  function settle() {
+    if (rafOn) return
+    const wait = viewPending ? 0 : Pace.restDelay(paceState())
+    if (!(wait > 0)) return schedule()
+    resting = true
+    restTimer = setTimeout(() => {
+      if (!resting) return
+      resting = false
+      if (safeStep(performance.now(), REST_DT_MAX)) settle(); else schedule()
+    }, wait * 1000)
+  }
+
+  // Bring the scene up to now (the time spent resting counts for the activity
+  // that was resting) and draw again from the next frame.
+  function wake() {
+    if (resting) {
+      resting = false
+      clearTimeout(restTimer)
+      safeStep(performance.now(), REST_DT_MAX)
+    }
+    schedule()
+  }
+  world.wake = wake
+
+  // The cursor moved. A resting pet only needs a new frame when its eyes
+  // would turn to follow it.
+  function nudge() {
+    if (resting && pet.act?.look && pet.gaze() !== pet.lastGaze) wake()
+  }
+
+  function frame(now) {
+    rafOn = false
+    if (resting) { resting = false; clearTimeout(restTimer) }
+    if (now - last < Pace.frameGap(paceState()) - 3) return schedule()
+    if (safeStep(now, 0.05)) settle(); else schedule()
+  }
+
+  function step(now, maxDt) {
+    const dt = clamp((now - last) / 1000, 0, maxDt)
     last = now
+    lastDrawn = performance.now()
     world.uptime += dt
     needTick += dt
     if (needTick >= 10) { pet.tickNeeds(needTick / 60); needTick = 0 }
 
     // keep the pet put while you're reading its cards or menu
     if ((notify.expanded || menuOpen) && ['walk', 'idle', 'sit'].includes(pet.act?.name)) {
-      pet.attend({ dur: 2, expr: notify.pending.some(n => n.kind !== 'done') ? 'wide' : 'normal' })
+      pet.attend({ dur: 2, expr: notify.hasFreshNeed() ? 'wide' : 'normal' })
     }
 
     pet.update(dt)
@@ -447,8 +655,13 @@
       menuSide = pos.side
       menu.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`
     }
+    viewPending = syncView()
+
+    // main reads the cursor fast only while the pet has to follow it
+    const follow = Pace.followsCursor(paceState())
+    if (follow !== tracking) { tracking = follow; api.trackCursor(follow) }
   }
-  requestAnimationFrame(frame)
+  schedule()
 
   // first hello
   setTimeout(() => {
