@@ -58,6 +58,8 @@ Claude Bouncer puts a small pixel pet on your desktop. Most of the time it wande
 | **While you were away** | Come back to "3 notifications while you were away!" |
 | **Sessions panel** | Every open session: working · needs you · done |
 | **claude.ai too** | With the browser extension, web chats on claude.ai notify you when Claude finishes answering |
+| **Quieter by default** | A card that needs you hops for the first few seconds, then waits quietly. **10분 뒤** on a card snoozes it for ten minutes (badge only), then it asks once more. Tasks that finish quickly (under 30s by default) only raise the badge |
+| **Worktrees** | Sessions in a git worktree or a subfolder are named `repo › worktree` and grouped by repository in the Sessions tab |
 | **Do Not Disturb** | Badge only, no sound or movement. Optional system notifications |
 | **Focus mode** | Notifications still arrive, but the pet never walks over asking to eat or play |
 
@@ -140,7 +142,7 @@ Output goes to `dist/`. Moving the `.app` is fine — the hook path is refreshed
 | <kbd>⌥</kbd><kbd>⇧</kbd><kbd>C</kbd> | Summon to your cursor (press again to close the cards) |
 | Menu-bar icon | Panel, summon, play, Do Not Disturb, focus mode, roaming, test notifications, hook management |
 
-**Panel tabs:** 🔔 Inbox · 🖥 Sessions · 🐾 Pet (stats, actions, custom look) · ⚙ Settings (size, roaming (off: the pet alerts from where it stands instead of running to your cursor), sound, system notifications, Do Not Disturb, focus mode, launch at login, summon hotkey)
+**Panel tabs:** 🔔 Inbox · 🖥 Sessions · 🐾 Pet (stats, actions, custom look) · ⚙ Settings (size, roaming (off: the pet alerts from where it stands instead of running to your cursor), run over for finished tasks (always · 30s+ · 2min+), sound, system notifications, Do Not Disturb, focus mode, launch at login, summon hotkey)
 
 ## claude.ai in the browser
 
@@ -193,7 +195,7 @@ Claude Code ──hook──▶ send-notify.sh/.ps1 ──POST 127.0.0.1:17891�
 1. On launch the app registers four hooks in `~/.claude/settings.json` — `Stop`, `Notification`, `UserPromptSubmit`, `SessionEnd` — and only touches its own entries.
 2. The hook script (`send-notify.sh` on macOS/Linux, `send-notify.ps1` on Windows — no Node.js needed) reads the event, adds where it came from (terminal bundle id, the tab's tty, tmux / Orca pane) and posts it to the app with a per-user token. It never blocks or fails a Claude turn.
 3. The app tracks each session, reads the last prompt and reply from the transcript, and builds the card.
-4. The pet lives on a transparent full-screen overlay that only catches the mouse over the pet, cards and menus; every other click goes straight through to your apps.
+4. The pet lives on a transparent overlay that only catches the mouse over the pet, cards and menus; every other click goes straight through to your apps. On macOS the overlay is a small window around the pet, growing to the whole screen only for cards, menus and games. Nothing is redrawn while the pet stands still.
 
 **What gets detected:**
 
