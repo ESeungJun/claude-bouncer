@@ -10,6 +10,8 @@ html, body {
   cursor: default;
 }
 
+/* 창은 펫 둘레만 보여 줄 때가 많다. 안의 좌표는 화면(작업 영역) 기준이고
+   overlay.js 가 창 위치만큼 이 층을 반대로 밀어 맞춘다. */
 #layer { position: fixed; inset: 0; }
 
 /* ---------- pet ---------- */

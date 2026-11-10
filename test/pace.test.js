@@ -1,7 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert')
 const Pace = require('../renderer/js/pace')
-const { cursorPollMs, isQuietDone } = require('../lib/pace')
+const { cursorPollMs, isQuietDone, viewBounds } = require('../lib/pace')
 
 // 가만히 서 있는 펫 (아무것도 예정되지 않은 상태)
 function still(extra = {}) {
@@ -110,4 +110,49 @@ test('a quickly finished task is announced quietly', () => {
   // cards that need an answer are never quiet
   assert.strictEqual(isQuietDone({ kind: 'permission', durationMs: 10 }, 30), false)
   assert.strictEqual(isQuietDone(null, 30), false)
+})
+
+test('the small window sits around the pet and stays inside the work area', () => {
+  const world = { w: 1728, h: 1084 }
+  const pet = { x: 800, y: 600, pw: 54, ph: 48 }
+  const v = Pace.compactView(pet, world)
+  assert.deepStrictEqual({ w: v.w, h: v.h }, { w: 354, h: 268 })
+  // the pet is inside, with room above its head for a bubble and a hop
+  assert.ok(v.x < pet.x - pet.pw / 2 && v.x + v.w > pet.x + pet.pw / 2)
+  assert.ok(pet.y - pet.ph - v.y >= 150 && v.y + v.h > pet.y)
+  // moving the pet moves the window by the same amount: the pet stays put inside it
+  const v2 = Pace.compactView({ ...pet, x: 813.4, y: 590 }, world)
+  assert.deepStrictEqual([v2.x - v.x, v2.y - v.y], [13, -10])
+  // corners: clamped to the work area
+  assert.deepStrictEqual(Pace.compactView({ ...pet, x: 1700, y: 1080 }, world), { x: 1728 - 354, y: 1084 - 268, w: 354, h: 268 })
+  assert.deepStrictEqual(Pace.compactView({ ...pet, x: 30, y: 60 }, world), { x: 0, y: 0, w: 354, h: 268 })
+  // a work area smaller than the window
+  assert.deepStrictEqual(Pace.compactView(pet, { w: 300, h: 200 }), { x: 0, y: 0, w: 300, h: 200 })
+})
+
+test('cards, the menu, games and long bubbles need the whole work area', () => {
+  const view = { w: 354, h: 268 }
+  const none = { expanded: false, menuOpen: false, busy: false, bubbleW: 0 }
+  assert.strictEqual(Pace.needsFullView(none, view), false)
+  assert.strictEqual(Pace.needsFullView({ ...none, expanded: true }, view), true)
+  assert.strictEqual(Pace.needsFullView({ ...none, menuOpen: true }, view), true)
+  assert.strictEqual(Pace.needsFullView({ ...none, busy: true }, view), true)
+  assert.strictEqual(Pace.needsFullView({ ...none, bubbleW: 120 }, view), false)
+  assert.strictEqual(Pace.needsFullView({ ...none, bubbleW: 361 }, view), true)
+})
+
+test('a window request from the overlay is cut to fit the work area', () => {
+  const wa = { x: 1728, y: 112, width: 2560, height: 1410 }
+  assert.deepStrictEqual(viewBounds({ x: 2206, y: 1142, w: 354, h: 268 }, wa), { x: 3934, y: 1254, width: 354, height: 268 })
+  assert.deepStrictEqual(viewBounds({ x: 0, y: 0, w: 2560, h: 1410 }, wa), { x: 1728, y: 112, width: 2560, height: 1410 })
+  // out of range: pulled back inside, never larger than the work area, never tiny
+  assert.deepStrictEqual(viewBounds({ x: -500, y: 99999, w: 354, h: 268 }, wa), { x: 1728, y: 112 + 1410 - 268, width: 354, height: 268 })
+  assert.deepStrictEqual(viewBounds({ x: 0, y: 0, w: 99999, h: 99999 }, wa), { x: 1728, y: 112, width: 2560, height: 1410 })
+  assert.deepStrictEqual(viewBounds({ x: 10, y: 10, w: 1, h: 1 }, wa), { x: 1738, y: 122, width: 120, height: 120 })
+  assert.deepStrictEqual(viewBounds({ x: 10.6, y: 10.4, w: 354, h: 268 }, wa), { x: 1739, y: 122, width: 354, height: 268 })
+  // garbage
+  for (const bad of [null, {}, { x: 'a', y: 0, w: 1, h: 1 }, { x: NaN, y: 0, w: 1, h: 1 }, { x: 0, y: 0, w: Infinity, h: 1 }]) {
+    assert.strictEqual(viewBounds(bad, wa), null)
+  }
+  assert.strictEqual(viewBounds({ x: 0, y: 0, w: 1, h: 1 }, null), null)
 })

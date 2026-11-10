@@ -1,4 +1,4 @@
-// 프레임 루프를 언제 돌리고 언제 쉬게 할지 정한다.
+// 프레임 루프를 언제 돌리고 언제 쉬게 할지, 오버레이 창을 얼마나 크게 둘지 정한다.
 // DOM 을 쓰지 않는 순수 함수라 node 에서도 불러 테스트한다(test/pace.test.js).
 
 ;(function (root) {
@@ -64,7 +64,34 @@
     return BREATH[Math.floor((t || 0) / BREATH_STEP) % BREATH.length]
   }
 
-  const Pace = { restDelay, frameGap, followsCursor, breath, untilNext, MAX_REST, MIN_REST, BREATH_STEP, POSE_PERIOD }
+  // ---------- 오버레이 창 크기 ----------
+  // 펫만 있을 때는 펫 둘레의 작은 창을 쓰고 창이 펫을 따라다닌다.
+  // 카드·메뉴·놀이처럼 넓은 면적이 필요하면 화면 전체로 키운다.
+
+  const VIEW_SIDE = 150 // 펫 좌우 여유 (말풍선·배지·작업 중 표시)
+  const VIEW_TOP = 190 // 머리 위 여유 (점프 + 말풍선 + 떠오르는 이모트)
+  const VIEW_BOTTOM = 30 // 발 아래 여유 (그림자)
+
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
+
+  // p: { x, y, pw, ph } (발 사이 점과 펫 크기), world: { w, h } → 창이 보여줄 영역
+  function compactView(p, world) {
+    const w = Math.min(world.w, Math.ceil(p.pw) + VIEW_SIDE * 2)
+    const h = Math.min(world.h, Math.ceil(p.ph) + VIEW_TOP + VIEW_BOTTOM)
+    return {
+      x: clamp(Math.round(p.x - w / 2), 0, world.w - w),
+      y: clamp(Math.round(p.y - p.ph - VIEW_TOP), 0, world.h - h),
+      w, h,
+    }
+  }
+
+  // s: { expanded, menuOpen, busy, bubbleW } → 화면 전체가 필요한가
+  function needsFullView(s, view) {
+    if (s.expanded || s.menuOpen || s.busy) return true
+    return !!(s.bubbleW && view && s.bubbleW > view.w - 8)
+  }
+
+  const Pace = { restDelay, frameGap, followsCursor, breath, compactView, needsFullView, untilNext, MAX_REST, MIN_REST, BREATH_STEP, POSE_PERIOD }
   if (typeof module === 'object' && module.exports) module.exports = Pace
   if (root) { root.CB = root.CB || {}; root.CB.Pace = Pace }
 })(typeof window !== 'undefined' ? window : null)

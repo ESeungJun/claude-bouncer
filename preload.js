@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // overlay plumbing
   setIgnoreMouse: (ignore) => ipcRenderer.send('mouse:ignore', !!ignore),
+  setView: (view) => ipcRenderer.invoke('overlay:view', view),
+  moveView: (pos) => ipcRenderer.send('overlay:move', pos),
   trackCursor: (on) => ipcRenderer.send('cursor:track', !!on),
   showPetMenu: () => ipcRenderer.send('menu:pet'),
   followDisplay: () => ipcRenderer.invoke('display:follow'),

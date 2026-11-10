@@ -14,6 +14,8 @@ window.CB = window.CB || {}
   const GRAVITY = 1500
   const NUDGE_SEC = 6 // 응답 필요 알림이 온 뒤 이 시간 동안만 계속 점프한다
   const CALM_SEC = 60 // 그 뒤로는 이 간격으로 한 번씩만
+  const dpr = window.devicePixelRatio || 1
+  const snap = (v) => Math.round(v * dpr) / dpr // 물리 픽셀에 맞춘다
 
   const LINES = {
     click: ['헤헤', '왜~?', '!', '히히', '간지러워!', '응?', '뀨'],
@@ -607,8 +609,8 @@ window.CB = window.CB || {}
         Sprites.blit(this.canvas, Sprites.petCanvas(spriteOpts), this.scale)
         this.lastPose = key
       }
-      const left = this.x - this.pw / 2
-      const top = this.y - this.ph
+      const left = snap(this.x - this.pw / 2)
+      const top = snap(this.y - this.ph)
       this.el.style.transform = `translate3d(${left}px, ${top}px, 0)`
       let sx = 1 + this.squash
       let sy = 1 - this.squash

@@ -9,7 +9,7 @@ const { installClaudeHook, hookScriptPath } = require('./scripts/install-hook')
 const { SessionTracker } = require('./lib/sessions')
 const { JsonStore } = require('./lib/store')
 const { focusTerminal, activateApp, frontTerminal, isFrontTerminal, terminalBundle, frontChanged } = require('./lib/focus')
-const { cursorPollMs, isQuietDone } = require('./lib/pace')
+const { cursorPollMs, viewBounds, isQuietDone } = require('./lib/pace')
 const { startServer, commandQueue, PORT } = require('./lib/server')
 const { Higgsfield, MODELS, DEFAULT_MODEL } = require('./lib/higgsfield')
 const { PRESETS, presetLoader, validSkin, resolveSkin } = require('./lib/skins')
@@ -70,6 +70,15 @@ let overlay = null
 let panel = null
 let tray = null
 let currentDisplayId = null
+// The overlay window covers the whole work area only while it has to (cards,
+// menu, games). Otherwise it is a small window that follows the pet; the
+// overlay asks for the area it needs, in work-area coordinates.
+// (macOS only for now: not tried on Windows. CLAUDE_BOUNCER_FULL_OVERLAY=1
+// keeps the old full-size window, for comparing or as a way out.)
+const COMPACT_OVERLAY = IS_MAC && !process.env.CLAUDE_BOUNCER_FULL_OVERLAY
+let workArea = null // work area of the display the pet is on
+let viewEpoch = 0 // bumped whenever main resets the window to the whole work area
+let viewSize = null // { width, height } while the window is small
 let cursorTracking = false // the pet is following the cursor right now
 let pokeCursor = () => {}
 let hotkeyOk = false
@@ -170,6 +179,7 @@ const PRELOAD = path.join(__dirname, 'preload.js')
 function createOverlay() {
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
   currentDisplayId = display.id
+  setWorkArea(display.workArea)
   const opts = {
     ...display.workArea,
     transparent: true,
@@ -222,9 +232,22 @@ function createOverlay() {
   })
 }
 
+// The window is (back) over the whole work area: requests the overlay made
+// for the previous one no longer apply.
+function setWorkArea(area) {
+  workArea = { ...area }
+  viewEpoch++
+  viewSize = null
+}
+
+function displayInfo() {
+  return { ...workArea, epoch: viewEpoch, compact: COMPACT_OVERLAY }
+}
+
 function moveOverlayTo(display, { reason = 'follow' } = {}) {
   if (!overlay || overlay.isDestroyed() || display.id === currentDisplayId) return false
   currentDisplayId = display.id
+  setWorkArea(display.workArea)
   // macOS refuses to move a visible-on-all-workspaces window across displays.
   if (IS_MAC) overlay.setVisibleOnAllWorkspaces(false)
   overlay.setBounds(display.workArea)
@@ -234,7 +257,7 @@ function moveOverlayTo(display, { reason = 'follow' } = {}) {
   }
   const c = screen.getCursorScreenPoint()
   send(overlay, 'display', {
-    width: display.workArea.width, height: display.workArea.height, reason,
+    ...displayInfo(), reason,
     cursor: { x: c.x - display.workArea.x, y: c.y - display.workArea.y },
   })
   return true
@@ -926,16 +949,17 @@ function startUpdateChecks() {
 function startFeeds() {
   // The cursor is read often only while it matters: every frame while the
   // pet follows it, a few times a second otherwise, once a second when
-  // nobody is there.
+  // nobody is there. Positions are relative to the work area, not the window
+  // (which may be the small one around the pet).
   let last = ''
   let movedAt = 0
   let away = false
   let timer = null
   const tick = () => {
     let delay = 250
-    if (overlay && !overlay.isDestroyed()) {
+    if (overlay && !overlay.isDestroyed() && workArea) {
       const p = screen.getCursorScreenPoint()
-      const b = overlay.getBounds()
+      const b = workArea
       const inside = p.x >= b.x && p.y >= b.y && p.x < b.x + b.width && p.y < b.y + b.height
       const key = `${p.x},${p.y},${inside}`
       if (key !== last) {
@@ -973,6 +997,7 @@ function registerIpc() {
     pet: store.data.pet,
     platform: process.platform,
     port: PORT,
+    display: displayInfo(),
     update: updateState(),
     ...snapshot(),
   }))
@@ -1000,6 +1025,24 @@ function registerIpc() {
     else overlay.setIgnoreMouseEvents(false)
   })
 
+  // The overlay asks for the part of the work area its window should cover.
+  // A request made for an earlier work area (the pet has since moved to
+  // another screen) is dropped.
+  const fromOverlay = (e, v) => COMPACT_OVERLAY && overlay && !overlay.isDestroyed() && e.sender === overlay.webContents && v && v.epoch === viewEpoch
+  ipcMain.handle('overlay:view', (e, v) => {
+    if (!fromOverlay(e, v)) return false
+    const b = viewBounds(v, workArea)
+    if (!b) return false
+    overlay.setBounds(b)
+    viewSize = b.width === workArea.width && b.height === workArea.height ? null : { width: b.width, height: b.height }
+    return true
+  })
+  // the small window following the pet (same size, new place)
+  ipcMain.on('overlay:move', (e, v) => {
+    if (!fromOverlay(e, v) || !viewSize) return
+    const b = viewBounds({ x: v.x, y: v.y, w: viewSize.width, h: viewSize.height }, workArea)
+    if (b) overlay.setPosition(b.x, b.y)
+  })
   ipcMain.on('cursor:track', (e, on) => {
     if (!overlay || e.sender !== overlay.webContents) return
     cursorTracking = !!on
@@ -1181,8 +1224,9 @@ app.whenReady().then(() => {
   })
   screen.on('display-metrics-changed', (_, d) => {
     if (d.id === currentDisplayId && overlay) {
+      setWorkArea(d.workArea)
       overlay.setBounds(d.workArea)
-      send(overlay, 'display', { width: d.workArea.width, height: d.workArea.height, reason: 'metrics' })
+      send(overlay, 'display', { ...displayInfo(), reason: 'metrics' })
     }
   })
 })

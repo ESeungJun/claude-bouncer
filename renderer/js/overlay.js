@@ -9,17 +9,23 @@
 
   const state = await api.getState()
 
+  // The world is the whole work area of the screen the pet is on. The window
+  // usually shows only a small part of it around the pet (world.view) and
+  // follows the pet; `display` says where that work area sits on the desktop.
+  let display = { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight, epoch: 0, compact: false, ...(state.display || {}) }
+  const canCompact = !!display.compact
   const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
 
   const world = {
-    w: window.innerWidth,
-    h: window.innerHeight,
+    w: display.width,
+    h: display.height,
     layer,
     settings: state.settings,
     data: { pending: state.pending || [], sessions: state.sessions || [], working: state.working || 0 },
-    cursor: { x: window.innerWidth / 2, y: window.innerHeight / 2, inside: false, movedAt: 0 },
+    cursor: { x: display.width / 2, y: display.height / 2, inside: false, movedAt: 0 },
     idleSec: 0,
     uptime: 0,
+    view: { x: 0, y: 0, w: display.width, h: display.height, full: true },
     reducedMotion: motionQuery.matches,
   }
   // the pet walks over to you only when roaming is on and motion isn't reduced
@@ -48,7 +54,7 @@
     const c = world.cursor
     let hit = captures.size > 0
     if (!hit && c.inside) {
-      const node = document.elementFromPoint(c.x, c.y)
+      const node = document.elementFromPoint(c.x - world.view.x, c.y - world.view.y)
       hit = !!(node && node.closest('[data-hit]'))
     }
     if (hit === ignoring) {
@@ -190,10 +196,20 @@
     c.y = y
   }
 
+  // Where a mouse event happened, in world coordinates. The small window
+  // moves with the pet, so positions inside it shift under a still cursor:
+  // take the screen position instead.
+  function at(e) {
+    return canCompact
+      ? { x: e.screenX - display.x, y: e.screenY - display.y }
+      : { x: e.clientX, y: e.clientY }
+  }
+
   function cursorFromEvent(e) {
-    moveCursor(e.clientX, e.clientY)
+    const p = at(e)
+    moveCursor(p.x, p.y)
     world.cursor.inside = true
-    return { x: e.clientX, y: e.clientY }
+    return p
   }
 
   document.addEventListener('mousemove', (e) => {
@@ -282,7 +298,8 @@
 
   document.addEventListener('contextmenu', (e) => {
     e.preventDefault()
-    if (pet.contains(e.clientX, e.clientY)) api.showPetMenu()
+    const { x, y } = at(e)
+    if (pet.contains(x, y)) api.showPetMenu()
   })
 
   // ---------- events from main ----------
@@ -374,8 +391,11 @@
 
   api.onDisplay((d) => {
     wake()
+    display = { ...display, ...d }
     world.w = d.width
     world.h = d.height
+    // main put the window back over the whole work area
+    resetView()
     // the cursor feed for the new screen is ~33 ms away; use the position main sent
     if (d.cursor) { world.cursor.x = d.cursor.x; world.cursor.y = d.cursor.y; world.cursor.inside = true }
     if (d.reason === 'notify' || d.reason === 'summon' || d.reason === 'follow') {
@@ -433,11 +453,96 @@
   }
 
   window.addEventListener('resize', () => {
+    // with the small window the world size comes from main, not from the window
+    if (canCompact) return
     wake()
     world.w = window.innerWidth
     world.h = window.innerHeight
     pet.clampPos()
   })
+
+  // ---------- window size ----------
+  // Alone, the pet lives in a small window that follows it, so the system
+  // only has to blend that small area. Cards, the menu and games need room:
+  // the window grows to the whole work area while they are up.
+
+  const fullView = () => ({ x: 0, y: 0, w: world.w, h: world.h, full: true })
+  let viewGen = 0 // bumped to drop a switch that is under way
+  let viewBusy = false
+  let viewRetryAt = 0
+  let shrinkAt = 0 // uptime after which the window may go small again
+
+  function applyView(v) {
+    world.view = v
+    layer.style.transform = v.x || v.y ? `translate(${-v.x}px, ${-v.y}px)` : ''
+  }
+
+  function resetView() {
+    viewGen++
+    viewBusy = false
+    layer.style.visibility = ''
+    applyView(fullView())
+    shrinkAt = world.uptime + 0.6
+  }
+
+  const nextFrames = (n) => Promise.race([
+    new Promise((resolve) => { const f = () => (--n > 0 ? requestAnimationFrame(f) : resolve()); requestAnimationFrame(f) }),
+    new Promise((resolve) => setTimeout(resolve, 250)),
+  ])
+
+  // Resize / jump the window. The window and its content can't change in the
+  // same instant, so the layer is hidden for the few frames in between —
+  // otherwise the pet would flash in the wrong place.
+  async function switchView(target) {
+    viewBusy = true
+    const gen = ++viewGen
+    layer.style.visibility = 'hidden'
+    await nextFrames(2)
+    if (gen !== viewGen) return
+    let ok = false
+    try { ok = await api.setView({ x: target.x, y: target.y, w: target.w, h: target.h, epoch: display.epoch }) } catch {}
+    if (gen !== viewGen) return
+    if (ok) {
+      applyView(target)
+      // wait until the page has the new size before showing it again
+      for (let i = 0; i < 12 && (window.innerWidth !== target.w || window.innerHeight !== target.h); i++) {
+        await nextFrames(1)
+        if (gen !== viewGen) return
+      }
+    } else viewRetryAt = world.uptime + 0.5
+    layer.style.visibility = ''
+    viewBusy = false
+    wake()
+  }
+
+  // → true while a change of size is still coming (keep the frames going)
+  function syncView() {
+    if (!canCompact) return false
+    if (viewBusy) return true
+    const v = world.view
+    const c = Pace.compactView(pet, world)
+    const bubbleW = pet.bubble.classList.contains('show') ? (pet.bubbleSize?.w || 0) : 0
+    if (Pace.needsFullView({ expanded: notify.expanded, menuOpen, busy: play.busy(), bubbleW }, c)) {
+      shrinkAt = world.uptime + 0.6
+      if (!v.full && world.uptime >= viewRetryAt) switchView(fullView())
+      return !v.full
+    }
+    if (v.full) {
+      // a moment later, so a card that closes and reopens doesn't flicker
+      if (world.uptime >= shrinkAt && world.uptime >= viewRetryAt) switchView({ ...c, full: false })
+      return true
+    }
+    if (c.w !== v.w || c.h !== v.h) {
+      if (world.uptime >= viewRetryAt) switchView({ ...c, full: false })
+      return true
+    }
+    if (c.x !== v.x || c.y !== v.y) {
+      // same size: the window just follows the pet, which stays put inside it
+      applyView({ ...c, full: false })
+      api.moveView({ x: c.x, y: c.y, epoch: display.epoch })
+    }
+    return false
+  }
 
   // ---------- frame loop ----------
   // Frames are drawn only while something moves. When the pet is still, the
@@ -453,6 +558,7 @@
   let rafOn = false
   let resting = false
   let restTimer = null
+  let viewPending = false
   let tracking = false
 
   const paceState = () => ({
@@ -491,7 +597,7 @@
   // Stop drawing until something is due.
   function settle() {
     if (rafOn) return
-    const wait = Pace.restDelay(paceState())
+    const wait = viewPending ? 0 : Pace.restDelay(paceState())
     if (!(wait > 0)) return schedule()
     resting = true
     restTimer = setTimeout(() => {
@@ -548,6 +654,7 @@
       menuSide = pos.side
       menu.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`
     }
+    viewPending = syncView()
 
     // main reads the cursor fast only while the pet has to follow it
     const follow = Pace.followsCursor(paceState())
