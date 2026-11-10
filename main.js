@@ -8,7 +8,8 @@ const fs = require('fs')
 const { installClaudeHook, hookScriptPath } = require('./scripts/install-hook')
 const { SessionTracker } = require('./lib/sessions')
 const { JsonStore } = require('./lib/store')
-const { focusTerminal, activateApp, frontTerminal, isFrontTerminal } = require('./lib/focus')
+const { focusTerminal, activateApp, frontTerminal, isFrontTerminal, terminalBundle, frontChanged } = require('./lib/focus')
+const { cursorPollMs, viewBounds, isQuietDone } = require('./lib/pace')
 const { startServer, commandQueue, PORT } = require('./lib/server')
 const { Higgsfield, MODELS, DEFAULT_MODEL } = require('./lib/higgsfield')
 const { PRESETS, presetLoader, validSkin, resolveSkin } = require('./lib/skins')
@@ -35,15 +36,20 @@ const SETTING_RULES = {
   dnd: v => typeof v === 'boolean',
   focus: v => typeof v === 'boolean',
   roam: v => typeof v === 'boolean',
+  doneMin: v => DONE_MIN_CHOICES.includes(v),
   launchAtLogin: v => typeof v === 'boolean',
   hotkey: v => typeof v === 'string' && v.length < 60,
   skinModel: v => Object.prototype.hasOwnProperty.call(MODELS, v),
 }
 
 const DEFAULT_HOTKEY = 'Alt+Shift+C'
+// "완료 알림" — the pet comes over only for tasks that took at least this many
+// seconds (0 = always); shorter ones just raise the badge
+const DONE_MIN_CHOICES = [0, 30, 120]
+const SNOOZE_MS = 10 * 60 * 1000
 
 const DEFAULTS = {
-  settings: { scale: 3, sound: true, systemNotify: false, dnd: false, focus: false, roam: true, launchAtLogin: false, hotkey: DEFAULT_HOTKEY, skinModel: DEFAULT_MODEL },
+  settings: { scale: 3, sound: true, systemNotify: false, dnd: false, focus: false, roam: true, doneMin: 30, launchAtLogin: false, hotkey: DEFAULT_HOTKEY, skinModel: DEFAULT_MODEL },
   pet: {
     name: '클로디',
     hunger: 80, fun: 70, energy: 90,
@@ -64,6 +70,17 @@ let overlay = null
 let panel = null
 let tray = null
 let currentDisplayId = null
+// The overlay window covers the whole work area only while it has to (cards,
+// menu, games). Otherwise it is a small window that follows the pet; the
+// overlay asks for the area it needs, in work-area coordinates.
+// (macOS only for now: not tried on Windows. CLAUDE_BOUNCER_FULL_OVERLAY=1
+// keeps the old full-size window, for comparing or as a way out.)
+const COMPACT_OVERLAY = IS_MAC && !process.env.CLAUDE_BOUNCER_FULL_OVERLAY
+let workArea = null // work area of the display the pet is on
+let viewEpoch = 0 // bumped whenever main resets the window to the whole work area
+let viewSize = null // { width, height } while the window is small
+let cursorTracking = false // the pet is following the cursor right now
+let pokeCursor = () => {}
 let hotkeyOk = false
 let crashes = [] // overlay crash times (last minute)
 // Reasons the panel must stay open when it loses focus (photo maker on the
@@ -162,6 +179,7 @@ const PRELOAD = path.join(__dirname, 'preload.js')
 function createOverlay() {
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
   currentDisplayId = display.id
+  setWorkArea(display.workArea)
   const opts = {
     ...display.workArea,
     transparent: true,
@@ -214,9 +232,22 @@ function createOverlay() {
   })
 }
 
+// The window is (back) over the whole work area: requests the overlay made
+// for the previous one no longer apply.
+function setWorkArea(area) {
+  workArea = { ...area }
+  viewEpoch++
+  viewSize = null
+}
+
+function displayInfo() {
+  return { ...workArea, epoch: viewEpoch, compact: COMPACT_OVERLAY }
+}
+
 function moveOverlayTo(display, { reason = 'follow' } = {}) {
   if (!overlay || overlay.isDestroyed() || display.id === currentDisplayId) return false
   currentDisplayId = display.id
+  setWorkArea(display.workArea)
   // macOS refuses to move a visible-on-all-workspaces window across displays.
   if (IS_MAC) overlay.setVisibleOnAllWorkspaces(false)
   overlay.setBounds(display.workArea)
@@ -226,7 +257,7 @@ function moveOverlayTo(display, { reason = 'follow' } = {}) {
   }
   const c = screen.getCursorScreenPoint()
   send(overlay, 'display', {
-    width: display.workArea.width, height: display.workArea.height, reason,
+    ...displayInfo(), reason,
     cursor: { x: c.x - display.workArea.x, y: c.y - display.workArea.y },
   })
   return true
@@ -256,13 +287,41 @@ function createPanel() {
     backgroundColor: '#1f1a17',
     webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false },
   })
-  panel.loadFile(path.join('renderer', 'panel.html'))
-  panel.on('close', (e) => { if (!app.isQuitting) { e.preventDefault(); panel.hide() } })
-  panel.on('blur', () => { if (!panelPins.size && !panel.webContents.isDevToolsOpened()) panel.hide() })
+  const win = panel
+  win.loadFile(path.join('renderer', 'panel.html'))
+  win.on('close', (e) => { if (!app.isQuitting) { e.preventDefault(); win.hide() } })
+  win.on('blur', () => { if (!panelPins.size && !win.webContents.isDevToolsOpened()) win.hide() })
+  win.on('hide', () => retirePanelLater(win))
+  win.on('show', () => clearTimeout(panelRetireTimer))
+  win.on('closed', () => { if (panel === win) { panel = null; panelPins.clear() } })
+}
+
+// The panel is made the first time it is opened and let go once it has been
+// closed for a while: a hidden window still holds about 100 MB. It stays
+// while something in it is under way (a look being made, a guide left open).
+const PANEL_KEEP_MS = 5 * 60 * 1000
+let panelRetireTimer = null
+let panelReady = null // the panel window whose page has loaded
+
+function retirePanelLater(win) {
+  clearTimeout(panelRetireTimer)
+  panelRetireTimer = setTimeout(() => {
+    if (win.isDestroyed() || win !== panel || app.isQuitting) return
+    if (win.isVisible()) return
+    if (panelPins.size) return retirePanelLater(win)
+    win.destroy()
+  }, PANEL_KEEP_MS)
 }
 
 function showPanel(tab) {
-  if (!panel) return
+  if (!panel) {
+    createPanel()
+    const win = panel
+    // once its page is ready (the tab message would be lost before that)
+    win.webContents.once('did-finish-load', () => { panelReady = win; if (win === panel) showPanel(tab) })
+    return
+  }
+  if (panelReady !== panel) return // still loading: it shows itself when ready
   if (panel.isVisible() && panel.isFocused()) { if (tab) send(panel, 'panel-tab', tab); return }
   const cursor = screen.getCursorScreenPoint()
   const { x, y, width, height } = screen.getDisplayNearestPoint(cursor).workArea
@@ -303,6 +362,7 @@ function broadcastData() {
   updateTray(snap)
   closeHandledSystemNotifications(snap.pending)
   watchFront()
+  scheduleSnooze()
 }
 
 function broadcastSettings() {
@@ -313,24 +373,51 @@ function broadcastSettings() {
 
 // ---------- hook events ----------
 
+// Tell the person about a card: the pet comes over (unless it should stay
+// quiet) and, if asked for, a system notification goes out.
+function announce(notification) {
+  // a task that finished quickly only raises the badge
+  const brief = isQuietDone(notification, store.data.settings.doneMin)
+  const quiet = store.data.settings.dnd || brief
+  if (!quiet) {
+    // roaming off: the pet stays on its screen and spot, it only alerts there
+    if (store.data.settings.roam) followCursorDisplay('notify')
+    raiseOverlay()
+  }
+  // tiny delay so a display move (if any) settles before the pet reacts
+  setTimeout(() => send(overlay, 'notify', brief ? { ...notification, quiet: true } : notification), 60)
+  if (store.data.settings.systemNotify && !quiet) showSystemNotification(notification)
+}
+
 function onHookEvent(payload) {
   const { notification, changed, type } = tracker.handle(payload)
   if (notification) {
     saveHistory()
-    const quiet = store.data.settings.dnd
-    if (!quiet) {
-      // roaming off: the pet stays on its screen and spot, it only alerts there
-      if (store.data.settings.roam) followCursorDisplay('notify')
-      raiseOverlay()
-    }
-    // tiny delay so a display move (if any) settles before the pet reacts
-    setTimeout(() => send(overlay, 'notify', notification), 60)
-    if (store.data.settings.systemNotify && !quiet) showSystemNotification(notification)
+    announce(notification)
   } else if (changed) {
     saveHistory()
   }
   if (type === 'submit') send(overlay, 'session-busy', true)
   broadcastData()
+}
+
+// ---------- "10분 뒤" on a card ----------
+
+let snoozeTimer = null
+
+function scheduleSnooze() {
+  clearTimeout(snoozeTimer)
+  snoozeTimer = null
+  const at = tracker.nextSnoozeAt()
+  if (!at) return
+  snoozeTimer = setTimeout(() => {
+    const due = tracker.dueSnoozes()
+    if (due.length) {
+      saveHistory()
+      for (const n of due) announce(n)
+    }
+    broadcastData()
+  }, Math.min(Math.max(at - Date.now(), 0), 24 * 3600 * 1000) + 50)
 }
 
 const KIND_TITLE = {
@@ -369,16 +456,21 @@ function settleSession(sessionId) {
 }
 
 // ---------- clear cards when you switch to their terminal yourself ----------
-// While terminal cards are pending, look at the frontmost terminal every 1.5s.
+// While terminal cards are pending, look at the frontmost app every 3s.
 // When it changes to one that has cards, those sessions are settled. Cards
 // that arrive while you're already looking at their terminal stay until you
 // come back to it (or answer it). A done card left unread for half an hour
 // no longer keeps the check running.
+// Each look starts a process or two, so: no looks while you're away from the
+// keyboard, and the selected tab (an osascript run) is only read when a card
+// came from the app in front.
 
 const WATCH_DONE_MS = 30 * 60 * 1000
+const WATCH_EVERY_MS = 3000
+const WATCH_AWAY_SEC = 30
 
 let frontTimer = null
-let frontKey = '' // what was in front at the last look ('' = no look yet)
+let frontLast = null // what was in front at the last look
 let frontFirst = true
 
 function watchable(n) {
@@ -387,19 +479,25 @@ function watchable(n) {
 
 function watchFront() {
   if (frontTimer) return
-  if (!IS_MAC || !tracker.pending().some(watchable)) { frontKey = ''; frontFirst = true; return }
+  if (!IS_MAC || !tracker.pending().some(watchable)) { frontLast = null; frontFirst = true; return }
   frontTimer = setTimeout(async () => {
-    const front = await frontTerminal()
-    const key = front ? [front.bundleId, front.session, front.tty].join('|') : ''
-    if (frontKey && key && key !== frontKey) {
-      const hit = tracker.pending().filter(n => watchable(n) && isFrontTerminal(n.terminal, front))
-      for (const id of new Set(hit.map(n => n.sessionId))) settleSession(id)
+    try {
+      if (powerMonitor.getSystemIdleTime() < WATCH_AWAY_SEC) {
+        const cards = tracker.pending().filter(watchable)
+        const front = await frontTerminal({ wantTab: (bundleId) => cards.some(n => terminalBundle(n.terminal) === bundleId) })
+        if (frontChanged(frontLast, front)) {
+          const hit = tracker.pending().filter(n => watchable(n) && isFrontTerminal(n.terminal, front))
+          for (const id of new Set(hit.map(n => n.sessionId))) settleSession(id)
+        }
+        if (front) frontLast = front
+      }
+    } catch (e) {
+      console.error('[claude-bouncer] front app check failed:', e.message)
     }
-    if (key) frontKey = key
     frontFirst = false
     frontTimer = null
     watchFront()
-  }, frontFirst ? 200 : 1500)
+  }, frontFirst ? 200 : WATCH_EVERY_MS)
 }
 
 // claude.ai: ask the extension to bring the tab forward; if it isn't
@@ -849,23 +947,38 @@ function startUpdateChecks() {
 // ---------- cursor / idle feed for the pet ----------
 
 function startFeeds() {
+  // The cursor is read often only while it matters: every frame while the
+  // pet follows it, a few times a second otherwise, once a second when
+  // nobody is there. Positions are relative to the work area, not the window
+  // (which may be the small one around the pet).
   let last = ''
-  setInterval(() => {
-    if (!overlay || overlay.isDestroyed()) return
-    const p = screen.getCursorScreenPoint()
-    const b = overlay.getBounds()
-    const inside = p.x >= b.x && p.y >= b.y && p.x < b.x + b.width && p.y < b.y + b.height
-    const key = `${p.x},${p.y},${inside}`
-    if (key === last) return
-    last = key
-    send(overlay, 'cursor', { x: p.x - b.x, y: p.y - b.y, inside })
-  }, 33)
+  let movedAt = 0
+  let away = false
+  let timer = null
+  const tick = () => {
+    let delay = 250
+    if (overlay && !overlay.isDestroyed() && workArea) {
+      const p = screen.getCursorScreenPoint()
+      const b = workArea
+      const inside = p.x >= b.x && p.y >= b.y && p.x < b.x + b.width && p.y < b.y + b.height
+      const key = `${p.x},${p.y},${inside}`
+      if (key !== last) {
+        last = key
+        movedAt = Date.now()
+        send(overlay, 'cursor', { x: p.x - b.x, y: p.y - b.y, inside })
+      }
+      delay = cursorPollMs({ tracking: cursorTracking, movedAgoMs: Date.now() - movedAt, quiet: away || store.data.settings.dnd })
+    }
+    timer = setTimeout(tick, delay)
+  }
+  // read right away (the pet just started following the cursor)
+  pokeCursor = () => { clearTimeout(timer); tick() }
+  tick()
 
-  setInterval(() => {
-    send(overlay, 'idle', powerMonitor.getSystemIdleTime())
-  }, 4000)
-  powerMonitor.on('lock-screen', () => send(overlay, 'idle', 9999))
-  powerMonitor.on('unlock-screen', () => send(overlay, 'idle', 0))
+  const idle = (sec) => { away = sec > 60; send(overlay, 'idle', sec) }
+  setInterval(() => idle(powerMonitor.getSystemIdleTime()), 4000)
+  powerMonitor.on('lock-screen', () => idle(9999))
+  powerMonitor.on('unlock-screen', () => idle(0))
 }
 
 // ---------- IPC ----------
@@ -884,6 +997,7 @@ function registerIpc() {
     pet: store.data.pet,
     platform: process.platform,
     port: PORT,
+    display: displayInfo(),
     update: updateState(),
     ...snapshot(),
   }))
@@ -911,9 +1025,36 @@ function registerIpc() {
     else overlay.setIgnoreMouseEvents(false)
   })
 
+  // The overlay asks for the part of the work area its window should cover.
+  // A request made for an earlier work area (the pet has since moved to
+  // another screen) is dropped.
+  const fromOverlay = (e, v) => COMPACT_OVERLAY && overlay && !overlay.isDestroyed() && e.sender === overlay.webContents && v && v.epoch === viewEpoch
+  ipcMain.handle('overlay:view', (e, v) => {
+    if (!fromOverlay(e, v)) return false
+    const b = viewBounds(v, workArea)
+    if (!b) return false
+    overlay.setBounds(b)
+    viewSize = b.width === workArea.width && b.height === workArea.height ? null : { width: b.width, height: b.height }
+    return true
+  })
+  // the small window following the pet (same size, new place)
+  ipcMain.on('overlay:move', (e, v) => {
+    if (!fromOverlay(e, v) || !viewSize) return
+    const b = viewBounds({ x: v.x, y: v.y, w: viewSize.width, h: viewSize.height }, workArea)
+    if (b) overlay.setPosition(b.x, b.y)
+  })
+  ipcMain.on('cursor:track', (e, on) => {
+    if (!overlay || e.sender !== overlay.webContents) return
+    cursorTracking = !!on
+    if (cursorTracking) pokeCursor()
+  })
+
   ipcMain.handle('notif:open', (_, id) => openNotification(String(id)))
   ipcMain.handle('notif:dismiss', (_, id) => {
     if (tracker.markRead(String(id))) { saveHistory(); broadcastData() }
+  })
+  ipcMain.handle('notif:snooze', (_, id) => {
+    if (tracker.snooze(String(id), SNOOZE_MS)) { saveHistory(); broadcastData() }
   })
   ipcMain.handle('notif:readAll', () => { tracker.markAllRead(); saveHistory(); broadcastData() })
   ipcMain.handle('history:get', () => ({ ...snapshot(), history: tracker.history }))
@@ -1058,7 +1199,7 @@ app.whenReady().then(() => {
   syncHook()
   registerIpc()
   createOverlay()
-  createPanel()
+  scheduleSnooze() // cards snoozed before the last quit
   registerHotkey()
   createTray()
   startFeeds()
@@ -1072,6 +1213,8 @@ app.whenReady().then(() => {
     onHello: (d) => {
       ext.seenAt = Date.now()
       if (d?.instance) ext.instances.set(d.instance, Date.now())
+      // a restarted extension comes back under a new id: forget the old ones
+      for (const [id, at] of ext.instances) if (Date.now() - at > 5 * 60 * 1000) ext.instances.delete(id)
       if (typeof d?.browser === 'string') ext.browser = d.browser.slice(0, 40)
     },
   })
@@ -1082,8 +1225,9 @@ app.whenReady().then(() => {
   })
   screen.on('display-metrics-changed', (_, d) => {
     if (d.id === currentDisplayId && overlay) {
+      setWorkArea(d.workArea)
       overlay.setBounds(d.workArea)
-      send(overlay, 'display', { width: d.workArea.width, height: d.workArea.height, reason: 'metrics' })
+      send(overlay, 'display', { ...displayInfo(), reason: 'metrics' })
     }
   })
 })
