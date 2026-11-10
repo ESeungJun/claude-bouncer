@@ -264,13 +264,41 @@ function createPanel() {
     backgroundColor: '#1f1a17',
     webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false },
   })
-  panel.loadFile(path.join('renderer', 'panel.html'))
-  panel.on('close', (e) => { if (!app.isQuitting) { e.preventDefault(); panel.hide() } })
-  panel.on('blur', () => { if (!panelPins.size && !panel.webContents.isDevToolsOpened()) panel.hide() })
+  const win = panel
+  win.loadFile(path.join('renderer', 'panel.html'))
+  win.on('close', (e) => { if (!app.isQuitting) { e.preventDefault(); win.hide() } })
+  win.on('blur', () => { if (!panelPins.size && !win.webContents.isDevToolsOpened()) win.hide() })
+  win.on('hide', () => retirePanelLater(win))
+  win.on('show', () => clearTimeout(panelRetireTimer))
+  win.on('closed', () => { if (panel === win) { panel = null; panelPins.clear() } })
+}
+
+// The panel is made the first time it is opened and let go once it has been
+// closed for a while: a hidden window still holds about 100 MB. It stays
+// while something in it is under way (a look being made, a guide left open).
+const PANEL_KEEP_MS = 5 * 60 * 1000
+let panelRetireTimer = null
+let panelReady = null // the panel window whose page has loaded
+
+function retirePanelLater(win) {
+  clearTimeout(panelRetireTimer)
+  panelRetireTimer = setTimeout(() => {
+    if (win.isDestroyed() || win !== panel || app.isQuitting) return
+    if (win.isVisible()) return
+    if (panelPins.size) return retirePanelLater(win)
+    win.destroy()
+  }, PANEL_KEEP_MS)
 }
 
 function showPanel(tab) {
-  if (!panel) return
+  if (!panel) {
+    createPanel()
+    const win = panel
+    // once its page is ready (the tab message would be lost before that)
+    win.webContents.once('did-finish-load', () => { panelReady = win; if (win === panel) showPanel(tab) })
+    return
+  }
+  if (panelReady !== panel) return // still loading: it shows itself when ready
   if (panel.isVisible() && panel.isFocused()) { if (tab) send(panel, 'panel-tab', tab); return }
   const cursor = screen.getCursorScreenPoint()
   const { x, y, width, height } = screen.getDisplayNearestPoint(cursor).workArea
@@ -1128,7 +1156,6 @@ app.whenReady().then(() => {
   syncHook()
   registerIpc()
   createOverlay()
-  createPanel()
   registerHotkey()
   createTray()
   startFeeds()
