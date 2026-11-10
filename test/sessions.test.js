@@ -81,6 +81,17 @@ test('"waiting for your input" makes no card and leaves the open ones alone', ()
   assert.strictEqual(t.listSessions().find(s => s.id === 's1').status, 'done')
 })
 
+test('an interrupted turn stops counting as working once Claude waits for input', () => {
+  const t = tracker()
+  t.handle({ ...base, kind: 'submit', prompt: '긴 작업' })
+  assert.strictEqual(t.workingCount(), 1)
+  // Esc 로 멈추면 stop 이 오지 않고, 60초 뒤 idle_prompt 만 온다
+  const { notification } = t.handle({ ...base, kind: 'notification', notification_type: 'idle_prompt' })
+  assert.strictEqual(notification, null)
+  assert.strictEqual(t.workingCount(), 0)
+  assert.strictEqual(t.listSessions()[0].workStartedAt, 0)
+})
+
 test('markRead / markAllRead / session end', () => {
   const t = tracker()
   const a = t.handle({ ...base, kind: 'stop' }).notification
