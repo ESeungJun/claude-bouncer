@@ -4,7 +4,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const {
-  SessionTracker, readTranscriptTail, readGitBranch, classifyNotification, koreanMessage, buildTerminal, isRealPrompt,
+  SessionTracker, readTranscriptTail, readGitBranch, readGitInfo, projectLabel, classifyNotification, koreanMessage, buildTerminal, isRealPrompt,
 } = require('../lib/sessions')
 
 function tracker(extra = {}) {
@@ -208,4 +208,89 @@ test('submit without a tty keeps the tab we already know; branch is cached', () 
   t.advance(31000)
   t.handle({ ...base, kind: 'stop' })
   assert.strictEqual(reads, 2)
+})
+
+test('worktrees and subfolders are named with their repository', () => {
+  // real folders: a repository, a linked worktree kept inside it, and one kept elsewhere
+  const repo = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cb-repo-')), 'haulProject')
+  fs.mkdirSync(path.join(repo, '.git', 'worktrees', 'fix-login'), { recursive: true })
+  fs.writeFileSync(path.join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+  fs.writeFileSync(path.join(repo, '.git', 'worktrees', 'fix-login', 'HEAD'), 'ref: refs/heads/fix/login\n')
+  const wt = path.join(repo, '.worktrees', 'fix-login')
+  fs.mkdirSync(path.join(wt, 'src'), { recursive: true })
+  fs.writeFileSync(path.join(wt, '.git'), `gitdir: ${path.join(repo, '.git', 'worktrees', 'fix-login')}\n`)
+  fs.mkdirSync(path.join(repo, 'packages', 'app'), { recursive: true })
+
+  assert.deepStrictEqual(readGitInfo(repo), { branch: 'main', root: repo, repoRoot: repo })
+  assert.deepStrictEqual(readGitInfo(path.join(wt, 'src')), { branch: 'fix/login', root: wt, repoRoot: repo })
+  assert.deepStrictEqual(readGitInfo(os.tmpdir() + '/cb-no-such-folder'), { branch: '', root: '', repoRoot: '' })
+
+  const t = new SessionTracker({ readTranscript: () => ({}) })
+  const name = (cwd) => t.handle({ session_id: cwd, cwd, kind: 'submit', prompt: 'x' }).session
+  assert.strictEqual(name(repo).projectName, 'haulProject')
+  assert.strictEqual(name(wt).projectName, 'haulProject › fix-login')
+  assert.strictEqual(name(path.join(wt, 'src')).projectName, 'haulProject › fix-login')
+  assert.strictEqual(name(path.join(repo, 'packages', 'app')).projectName, 'haulProject › app')
+  // sessions of one repository share `repo`, so the panel can group them
+  const sessions = t.listSessions()
+  assert.deepStrictEqual([...new Set(sessions.map(s => s.repo))], [repo])
+  assert.strictEqual(sessions.find(s => s.cwd === wt).part, 'fix-login')
+  assert.strictEqual(sessions.find(s => s.cwd === wt).branch, 'fix/login')
+  // the card carries the same name
+  const { notification } = t.handle({ session_id: wt, cwd: wt, kind: 'stop' })
+  assert.strictEqual(notification.projectName, 'haulProject › fix-login')
+  fs.rmSync(path.dirname(repo), { recursive: true })
+})
+
+test('projectLabel: plain folders keep their name', () => {
+  assert.deepStrictEqual(projectLabel('/work/my-app', { branch: '', root: '', repoRoot: '' }), { name: 'my-app', repoName: 'my-app', part: '' })
+  assert.deepStrictEqual(projectLabel('/work/my-app', null), { name: 'my-app', repoName: 'my-app', part: '' })
+  assert.strictEqual(projectLabel('', null).name, '알 수 없음')
+  // a worktree folder named like its repository isn't repeated
+  assert.strictEqual(projectLabel('/wt/app', { branch: 'x', root: '/wt/app', repoRoot: '/src/app' }).name, 'app')
+  // a submodule (.git file pointing into .git/modules) is its own project
+  assert.strictEqual(projectLabel('/src/app/vendor/lib', { branch: 'x', root: '/src/app/vendor/lib', repoRoot: '/src/app/vendor/lib' }).name, 'lib')
+})
+
+test('a snoozed card stays pending, stops asking, and comes back when due', () => {
+  const t = tracker()
+  const { notification: n } = t.handle({ ...base, kind: 'notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to use Bash' })
+  assert.strictEqual(t.nextSnoozeAt(), 0)
+  assert.strictEqual(t.snooze(n.id, 600_000), true)
+  assert.strictEqual(t.pending().length, 1, 'still counted by the badge')
+  assert.strictEqual(t.pending()[0].snoozedUntil, 1_000_000 + 600_000)
+  assert.strictEqual(t.nextSnoozeAt(), 1_000_000 + 600_000)
+  // not yet
+  t.advance(599_000)
+  assert.deepStrictEqual(t.dueSnoozes(), [])
+  // due: asks again, once
+  t.advance(1_000)
+  const due = t.dueSnoozes()
+  assert.deepStrictEqual(due.map(d => d.id), [n.id])
+  assert.strictEqual(due[0].snoozedUntil, undefined)
+  assert.strictEqual(due[0].nudgedAt, 1_000_000 + 600_000)
+  assert.deepStrictEqual(t.dueSnoozes(), [])
+  assert.strictEqual(t.nextSnoozeAt(), 0)
+})
+
+test('snoozing only applies to cards that still wait for an answer', () => {
+  const t = tracker()
+  const done = t.handle({ ...base, kind: 'stop' }).notification
+  assert.strictEqual(t.snooze(done.id, 600_000), false)
+  assert.strictEqual(t.snooze('no-such-id', 600_000), false)
+  const need = t.handle({ ...base, kind: 'notification', notification_type: 'permission_prompt', message: 'permission to use Bash' }).notification
+  assert.strictEqual(t.snooze(need.id, 0), false)
+  assert.strictEqual(t.snooze(need.id, 600_000), true)
+  // answered in the terminal meanwhile: nothing comes back
+  t.handle({ ...base, kind: 'submit', prompt: 'go on' })
+  assert.strictEqual(t.nextSnoozeAt(), 0)
+  t.advance(700_000)
+  assert.deepStrictEqual(t.dueSnoozes(), [])
+  assert.strictEqual(t.find(need.id).snoozedUntil, undefined)
+  assert.strictEqual(t.snooze(need.id, 600_000), false, 'already resolved')
+  // dismissed by hand: same
+  const again = t.handle({ ...base, kind: 'notification', notification_type: 'permission_prompt', message: 'permission to use Bash' }).notification
+  t.snooze(again.id, 600_000)
+  t.markRead(again.id)
+  assert.strictEqual(t.nextSnoozeAt(), 0)
 })

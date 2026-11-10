@@ -104,11 +104,19 @@
       box.firstChild.style.whiteSpace = 'pre-line'
       return
     }
-    box.replaceChildren(...list.map((s) => {
+    // sessions of one repository (its worktrees and subfolders) go together,
+    // under the repository's name; the list keeps its most-recent-first order
+    const groups = new Map()
+    for (const s of list) {
+      const key = s.repo || s.id
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key).push(s)
+    }
+    const row = (s, grouped) => {
       const [label, cls] = STATUS[s.status] || STATUS.idle
-      const r = el('div', `row ${cls}`)
+      const r = el('div', `row ${cls}${grouped ? ' in-group' : ''}`)
       const r1 = el('div', 'r1')
-      r1.append(el('span', 'r-kind', label), el('span', 'r-proj', s.projectName))
+      r1.append(el('span', 'r-kind', label), el('span', 'r-proj', grouped ? (s.part || s.repoName || s.projectName) : s.projectName))
       if (s.branch) r1.append(el('span', 'r-branch', `🌿 ${s.branch}`))
       r1.append(el('span', 'r-time', s.status === 'working' && s.workStartedAt ? since(s.workStartedAt) : when(s.updatedAt)))
       r.append(r1)
@@ -118,7 +126,14 @@
       r.append(foot)
       r.addEventListener('click', () => api.focusSession(s.id))
       return r
-    }))
+    }
+    const nodes = []
+    for (const g of groups.values()) {
+      const grouped = g.length > 1
+      if (grouped) nodes.push(el('div', 'group', `${g[0].repoName || g[0].projectName} · 세션 ${g.length}개`))
+      for (const s of g) nodes.push(row(s, grouped))
+    }
+    box.replaceChildren(...nodes)
   }
 
   // ---------- pet ----------
