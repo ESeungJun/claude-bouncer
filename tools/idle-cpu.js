@@ -5,6 +5,7 @@
 //   node tools/idle-cpu.js --state walk --electron /path/to/Electron --app /path/to/app
 //
 // HOME 과 userData 를 임시 폴더로 돌려 실제 ~/.claude/settings.json 은 건드리지 않는다.
+// 전역 단축키는 등록하지 않고(쓰고 있는 설치본과 겹치지 않게) 소리도 끈다.
 // Electron 을 띄워 상태를 만든 뒤 `ps` 누적 CPU 시간 차이를 잰다(코어 1개 대비 %).
 // WindowServer 는 시스템 전체 값이라 다른 앱의 영향이 섞인다.
 //
@@ -129,7 +130,7 @@ async function runOnce(i) {
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true })
   fs.mkdirSync(ud, { recursive: true })
   const roam = STATE === 'walk' || STATE === 'roam'
-  fs.writeFileSync(path.join(ud, 'state.json'), JSON.stringify({ settings: { sound: false, roam } }))
+  fs.writeFileSync(path.join(ud, 'state.json'), JSON.stringify({ settings: { sound: false, roam, hotkey: '' } }))
 
   const child = spawn(electronPath(), [APP, `--user-data-dir=${ud}`, `--remote-debugging-port=${DEBUG_PORT}`], {
     env: { ...process.env, HOME: home, CFFIXED_USER_HOME: home },
