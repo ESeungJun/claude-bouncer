@@ -53,7 +53,7 @@ window.CB = window.CB || {}
       this.item = { kind, el: node, hint, x: this.w.cursor.x, y: this.w.cursor.y, z: 0, vz: 0, t: 0, bites: 0 }
       this.mode = 'holding'
       this.w.captureAll('holding')
-      this.pet.say(kind === 'apple' ? '사과다!' : '쿠키다!', 1500)
+      this.pet.say(CB.Pet.line(kind), 1500)
       this.pet.attend({ dur: 8, expr: 'wide' })
     }
 
@@ -73,19 +73,30 @@ window.CB = window.CB || {}
       Sound.play('pop')
       const p = this.pet
       const side = p.x < it.x ? -1 : 1
-      p.walkTo(it.x + side * (p.pw * 0.45), it.y, {
+      // A drawn character whose eat picture already shows it eating picks the
+      // snack up instead of nibbling it from the side (two foods at once looks off).
+      const skin = Sprites.getSkin()
+      const own = Sprites.isSheet(skin) && !!skin.frames.eat
+      p.walkTo(it.x + side * (p.pw * (own ? 0.1 : 0.45)), it.y, {
         run: true,
-        then: () => p.eat({ nibble: (n) => this.nibble(n) }, () => this.finishFood()),
+        then: () => {
+          if (own) { it.held = true; it.el.style.visibility = 'hidden' }
+          p.eat({ nibble: (n) => this.nibble(n) }, () => this.finishFood())
+        },
       })
     }
 
     nibble(n) {
       const it = this.item
       if (!it) return
-      it.el.style.clipPath = `inset(0 0 0 ${Math.min(80, n * 25)}%)`
-      const c = Sprites.itemElement('crumb', this.pet.scale, 'crumb')
-      c.style.left = (it.x + rand(-10, 10)) + 'px'
-      c.style.top = (it.y - 6) + 'px'
+      const p = this.pet
+      if (!it.held) it.el.style.clipPath = `inset(0 0 0 ${Math.min(80, n * 25)}%)`
+      // picked up: crumbs fall from the pet's mouth, not from the floor
+      const x = it.held ? p.x : it.x
+      const y = it.held ? p.y - p.ph * 0.35 : it.y - 6
+      const c = Sprites.itemElement('crumb', p.scale, 'crumb')
+      c.style.left = (x + rand(-10, 10)) + 'px'
+      c.style.top = y + 'px'
       this.w.layer.appendChild(c)
       setTimeout(() => c.remove(), 900)
     }
@@ -97,7 +108,7 @@ window.CB = window.CB || {}
       this.mode = null
       const p = this.pet
       p.boost({ hunger: it?.kind === 'apple' ? 18 : 25, fun: 4, energy: 3, fed: 1, xp: 5 })
-      p.celebrate(1.2, { line: pick(CB.Pet.LINES.fed), emote: 'heart' })
+      p.celebrate(1.2, { line: CB.Pet.line('fed'), emote: 'heart' })
       this.w.saveSoon()
     }
 
@@ -157,7 +168,7 @@ window.CB = window.CB || {}
       this.placeGoals()
       this.renderScore()
       this.foot = null
-      this.pet.say(`축구하자! 마우스로 공을 툭 차서 내 골대에 넣어봐 (${WIN_GOALS}골 먼저)`, 3400)
+      this.pet.say(CB.Pet.line('soccer', { goals: WIN_GOALS }), 3400)
       this.chase()
     }
 
@@ -305,10 +316,10 @@ window.CB = window.CB || {}
       const p = this.pet
       if (scorer === 'pet') {
         Sound.play('done')
-        p.celebrate(1.2, { line: pick(['골이다!', '들어갔다!', '내가 넣었어!']), emote: 'star' })
+        p.celebrate(1.2, { line: CB.Pet.line('goal'), emote: 'star' })
       } else {
         Sound.play('catch')
-        p.sad(1.2, pick(['아앗, 먹혔다…', '막을 수 있었는데!', '나이스 골…']))
+        p.sad(1.2, CB.Pet.line('conceded'))
       }
       if (b.score[scorer] >= WIN_GOALS) setTimeout(() => { if (this.ball === b) this.finishSoccer(scorer) }, 1200)
     }
@@ -318,7 +329,7 @@ window.CB = window.CB || {}
       const p = this.pet
       p.boost({ fun: 20, energy: -5, xp: 5 + b.score.me * 2 })
       Sound.play(winner === 'me' ? 'levelup' : 'end')
-      const line = winner === 'me' ? `${b.score.me}:${b.score.pet} 내가 졌다! 다음엔 이길 거야` : `${b.score.pet}:${b.score.me} 내가 이겼다!`
+      const line = winner === 'me' ? CB.Pet.line('lose', { score: `${b.score.me}:${b.score.pet}` }) : CB.Pet.line('win', { score: `${b.score.pet}:${b.score.me}` })
       this.endBall(false)
       p.boost({ played: 1 })
       if (winner === 'me') p.sad(2.2, line)
@@ -367,7 +378,7 @@ window.CB = window.CB || {}
       if (this.mode === 'ball') this.mode = null
       if (talk) {
         this.pet.boost({ played: 1, xp: 3 })
-        this.pet.celebrate(1.2, { line: '재밌었다!', emote: 'heart' })
+        this.pet.celebrate(1.2, { line: CB.Pet.line('fun'), emote: 'heart' })
         this.w.saveSoon()
       }
     }
@@ -419,10 +430,10 @@ window.CB = window.CB || {}
       if (!g) return {}
       if (g.stun > 0) return { expr: 'dizzy', mouth: 'o' }
       if (g.over) return { expr: 'happy', mouth: 'open', armL: 'up', armR: 'up' }
-      const moving = Math.abs(g.vx || 0) > 30
+      const moving = g.moveT > 0
       const f = Math.floor(p.t / 0.08) % 2
       if (g.kind === 'tag') return { expr: g.caughtT > 0 ? 'wide' : 'happy', mouth: g.caughtT > 0 ? 'o' : 'smile', legs: f ? [2, 1, 2, 1] : [1, 2, 1, 2], bob: f, lx: Math.sign(g.vx || 0) }
-      return { expr: g.happyT > 0 ? 'happy' : 'normal', mouth: g.happyT > 0 ? 'open' : undefined, ly: -1, armL: 'up', armR: 'up', legs: moving ? (f ? [2, 1, 2, 1] : [1, 2, 1, 2]) : undefined }
+      return { expr: g.happyT > 0 ? 'happy' : 'normal', mouth: g.happyT > 0 ? 'open' : undefined, ly: -1, armL: 'up', armR: 'up', legs: moving ? (f ? [2, 1, 2, 1] : [1, 2, 1, 2]) : undefined, lx: moving ? g.dir : undefined }
     }
 
     onGameClick(px, py) {
@@ -477,6 +488,9 @@ window.CB = window.CB || {}
           p.x += clamp(d, -900 * dt, 900 * dt)
         }
         g.vx = (p.x - prev) / Math.max(dt, 0.001)
+        // keep "running" a moment after the mouse stops, so small wobbles
+        // don't flip between the walk and standing pictures every frame
+        if (Math.abs(g.vx) > 30) { g.moveT = 0.25; g.dir = Math.sign(g.vx) } else g.moveT = Math.max(0, (g.moveT || 0) - dt)
 
         // spawn
         g.spawn -= dt
@@ -586,7 +600,7 @@ window.CB = window.CB || {}
       g.box.remove()
       this.game = null
       if (this.mode === 'game') this.mode = null
-      if (talk) this.pet.celebrate(1, { line: '또 놀자!', emote: 'heart' })
+      if (talk) this.pet.celebrate(1, { line: CB.Pet.line('more'), emote: 'heart' })
       else this.pet.idle(0.5)
     }
 
