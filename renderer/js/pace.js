@@ -25,16 +25,17 @@
   }
 
   // 다음 프레임이 필요하면 0, 아니면 쉬어도 되는 시간(초).
-  // s: { act, z, vz, squash, blinkAt, blinkT, sayTimer, t, busy, menuOpen, pressing, needTick }
+  // s: { act, z, vz, squash, blinkAt, blinkT, sayTimer, t, busy, menuOpen, pressing, needTick, animWait, sheet }
   function restDelay(s) {
     if (s.busy || s.menuOpen || s.pressing) return 0
     if (s.z > 0 || s.vz > 0 || Math.abs(s.squash || 0) > 0) return 0
     const act = s.act
     if (!act || !act.name) return 0
     let wait = MAX_REST
-    const period = POSE_PERIOD[act.name]
+    // 그림 스킨은 팔을 그리지 않으니 팔 포즈 주기로 깰 필요가 없다(움짤은 animWait)
+    const period = s.sheet ? 0 : POSE_PERIOD[act.name]
     if (period) wait = Math.min(wait, untilNext(act.t || 0, period))
-    else if (!STILL.has(act.name)) return 0
+    else if (!STILL.has(act.name) && !(s.sheet && POSE_PERIOD[act.name])) return 0
     if (typeof act.dur === 'number') wait = Math.min(wait, act.dur - (act.t || 0))
     if (act.name === 'attend' && act.hopEvery > 0) wait = Math.min(wait, act.hopT)
     if (act.name === 'sleep') {
@@ -43,6 +44,8 @@
     }
     wait = Math.min(wait, s.blinkT > 0 ? s.blinkT : s.blinkAt)
     if (s.sayTimer > 0) wait = Math.min(wait, s.sayTimer)
+    // 움직이는 그림 스킨: 다음 장으로 넘어갈 때 깬다(쉬는 동안엔 한 번 돌고 몇 초 멈춘다)
+    if (s.animWait != null) wait = Math.min(wait, s.animWait)
     wait = Math.min(wait, NEED_TICK - (s.needTick || 0))
     return wait >= MIN_REST ? wait : 0
   }

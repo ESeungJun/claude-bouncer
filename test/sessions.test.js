@@ -305,3 +305,59 @@ test('snoozing only applies to cards that still wait for an answer', () => {
   t.markRead(again.id)
   assert.strictEqual(t.nextSnoozeAt(), 0)
 })
+
+// #58: a file that never opens must not freeze the app
+test('async readers match the sync ones', async () => {
+  const { readTranscriptTailAsync, readGitInfoAsync } = require('../lib/sessions')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-'))
+  const file = path.join(dir, 't.jsonl')
+  fs.writeFileSync(file, [
+    { type: 'user', message: { role: 'user', content: '질문' } },
+    { type: 'assistant', message: { content: [{ type: 'text', text: '답' }] } },
+  ].map(r => JSON.stringify(r)).join('\n'))
+  const root = dir + path.sep
+  assert.deepStrictEqual(await readTranscriptTailAsync(file, root), readTranscriptTail(file, root))
+  assert.deepStrictEqual(await readTranscriptTailAsync(path.join(dir, 'missing'), root), {})
+  require('child_process').execFileSync('mkfifo', [path.join(dir, 'fifo')])
+  assert.deepStrictEqual(await readTranscriptTailAsync(path.join(dir, 'fifo'), root), {})
+  const repo = path.join(dir, 'repo')
+  fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
+  fs.mkdirSync(path.join(repo, 'src'))
+  fs.writeFileSync(path.join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+  assert.deepStrictEqual(await readGitInfoAsync(path.join(repo, 'src')), readGitInfo(path.join(repo, 'src')))
+  fs.rmSync(dir, { recursive: true })
+})
+
+test('handleAsync goes on when a file read hangs, and keeps the event order', async () => {
+  const { readWithin } = require('../lib/sessions')
+  const never = () => new Promise(() => {})
+  const slow = []
+  const t = new SessionTracker({
+    onSlowRead: (key) => slow.push(key),
+    readTranscript: () => { throw new Error('sync read used') },
+    readGit: () => { throw new Error('sync read used') },
+    readTranscriptAsync: never,
+    readGitAsync: async (cwd) => (cwd === '/stuck' ? never() : { branch: 'main', root: cwd, repoRoot: cwd }),
+  })
+  const base = { session_id: 's1', cwd: '/stuck', transcript_path: '/x.jsonl' }
+  const started = Date.now()
+  const a = t.handleAsync({ ...base, kind: 'submit', prompt: '고쳐줘' })
+  const b = t.handleAsync({ ...base, kind: 'stop', last_assistant_message: '고쳤어요' })
+  const [ra, rb] = await Promise.all([a, b])
+  assert.strictEqual(ra.type, 'submit')
+  assert.strictEqual(rb.type, 'stop')
+  assert.ok(rb.notification, 'the card still comes')
+  assert.strictEqual(rb.notification.summary, '고쳤어요')
+  assert.deepStrictEqual(slow.sort(), ['git:/stuck', 'tx:/x.jsonl'], 'the stuck paths are reported once')
+  // each stuck file costs one wait (≈1.5s), not one per event
+  assert.ok(Date.now() - started < 3500, `took ${Date.now() - started}ms`)
+  const t0 = Date.now()
+  const rc = await t.handleAsync({ ...base, kind: 'stop', last_assistant_message: '또 고쳤어요' })
+  assert.ok(rc.notification)
+  assert.ok(Date.now() - t0 < 300, `stuck reads are not waited for again (${Date.now() - t0}ms)`)
+  // a folder that reads fine still gets its branch
+  const r = await t.handleAsync({ session_id: 's2', cwd: '/ok', kind: 'submit', prompt: '하나 더' })
+  assert.strictEqual(r.session.branch, 'main')
+  // readWithin: a fast read wins over the timeout
+  assert.strictEqual(await readWithin('k', async () => 'ok', 'late', 1000), 'ok')
+})

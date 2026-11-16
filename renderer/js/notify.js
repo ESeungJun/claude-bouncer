@@ -98,7 +98,7 @@ window.CB = window.CB || {}
       const i = this.pending.findIndex(p => p.id === n.id)
       if (i < 0) this.pending.unshift(n); else this.pending[i] = n
       // 방해 금지이거나 짧게 끝난 작업이면 배지만 올린다
-      if (this.w.settings.dnd || n.quiet) { this.renderBadge(); if (this.expanded) this.renderCards(); return }
+      if (this.w.settings.dnd || n.quiet || this.w.play?.game) { this.renderBadge(); if (this.expanded) this.renderCards(); return }
       this.expand()
       clearTimeout(this.collapseTimer)
       if (!isNeed(n)) {
