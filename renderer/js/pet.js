@@ -295,11 +295,15 @@ window.CB = window.CB || {}
           const d = Math.hypot(dx, dy)
           if (d <= tolerance) { then ? then() : this.idle(); return false }
           const step = Math.min(d, sp * dt)
+          const was = { x: this.x, y: this.y }
           this.x += (dx / d) * step
           this.y += (dy / d) * step
           this.lookX = Math.abs(dx) > 2 ? Math.sign(dx) : 0
           this.lookY = Math.abs(dy) > Math.abs(dx) ? Math.sign(dy) : 0
           this.clampPos()
+          // a target the pet can't stand on (e.g. food dropped at the screen edge):
+          // as close as it gets counts as there, instead of walking in place forever
+          if (step > 0 && Math.hypot(this.x - was.x, this.y - was.y) < step * 0.05) { then ? then() : this.idle(); return false }
           return false
         },
         pose: () => {
