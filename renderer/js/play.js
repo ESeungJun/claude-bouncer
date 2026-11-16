@@ -97,7 +97,7 @@ window.CB = window.CB || {}
       this.mode = null
       const p = this.pet
       p.boost({ hunger: it?.kind === 'apple' ? 18 : 25, fun: 4, energy: 3, fed: 1, xp: 5 })
-      p.celebrate(1.2, { line: pick(CB.Pet.LINES.fed), emote: 'heart' })
+      p.celebrate(1.2, { line: CB.Pet.line('fed'), emote: 'heart' })
       this.w.saveSoon()
     }
 

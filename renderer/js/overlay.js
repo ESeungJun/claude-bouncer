@@ -108,8 +108,8 @@
 
   function openMenu(kind) {
     const title = {
-      hungry: pick(Pet.LINES.hungry),
-      play: pick(Pet.LINES.bored),
+      hungry: Pet.line('hungry'),
+      play: Pet.line('bored'),
       menu: `Lv.${pet.stats.level} 클로디 — 뭐 할까?`,
     }[kind]
     const items = [
@@ -329,7 +329,7 @@
         if (n) {
           pet.wave(3, `자리 비운 사이 알림 ${n}개 왔어!`)
           notify.expand()
-        } else pet.wave(2.4, pick(Pet.LINES.welcome))
+        } else pet.wave(2.4, Pet.line('welcome'))
       }
       if (world.canRoam()) pet.approachUser({ then: greet })
       else greet()
@@ -667,6 +667,6 @@
   // first hello
   setTimeout(() => {
     if (world.settings.dnd) return
-    pet.celebrate(1.4, { line: state.pet.lastSeen ? pick(Pet.LINES.welcome) : '안녕! 나는 클로디야', emote: 'heart' })
+    pet.celebrate(1.4, { line: state.pet.lastSeen ? Pet.line('welcome') : Pet.line('hello'), emote: 'heart' })
   }, 600)
 })()

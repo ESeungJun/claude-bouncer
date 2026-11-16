@@ -29,6 +29,13 @@ window.CB = window.CB || {}
     toss: ['우와아!', '꺄아!', '날아간다!'],
     dizzy: ['어지러워…', '빙글빙글…'],
     work: ['열일 중…', '코딩 코딩', '뚝딱뚝딱'],
+    hello: ['안녕! 나는 클로디야'],
+  }
+
+  // A line of this kind: the skin's own (a character's way of talking) if it has one.
+  function line(kind) {
+    const own = Sprites.getSkin()?.lines?.[kind]
+    return pick(own?.length ? own : LINES[kind])
   }
 
   class Pet {
@@ -204,7 +211,7 @@ window.CB = window.CB || {}
       this.sayTimer = ms / 1000
     }
 
-    sayLine(kind, ms) { this.say(pick(LINES[kind]), ms) }
+    sayLine(kind, ms) { this.say(line(kind), ms) }
 
     emote(kind, count = 1) {
       const h = this.head()
@@ -641,6 +648,7 @@ window.CB = window.CB || {}
   }
 
   Pet.LINES = LINES
+  Pet.line = line
   CB.Pet = Pet
   CB.util = { rand, pick, clamp }
 })()
