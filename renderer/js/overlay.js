@@ -432,7 +432,7 @@
       if (notify.pending.length) {
         notify.expand()
         const need = notify.pending.filter(n => n.kind !== 'done').length
-        pet.attend({ dur: 4, expr: need ? 'wide' : 'normal', line: need ? `응답 기다리는 세션 ${need}개!` : `새 알림 ${notify.pending.length}개!` })
+        pet.attend({ dur: 4, expr: need ? 'wide' : 'normal', line: need ? Pet.line('waiting', { n: need }) : Pet.line('notice', { n: notify.pending.length }) })
       } else {
         pet.wave(2.2, Pet.line(wasAsleep ? 'summonSleep' : 'summon'))
       }

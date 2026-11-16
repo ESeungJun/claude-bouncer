@@ -47,6 +47,8 @@ window.CB = window.CB || {}
     lose: ['{score} 내가 졌다! 다음엔 이길 거야'],
     fun: ['재밌었다!'],
     more: ['또 놀자!'],
+    waiting: ['응답 기다리는 세션 {n}개!'],
+    notice: ['새 알림 {n}개!'],
   }
 
   // A line of this kind: the skin's own (a character's way of talking) if it
