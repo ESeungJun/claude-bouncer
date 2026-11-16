@@ -339,6 +339,10 @@ test('handleAsync goes on when a file read hangs, and keeps the event order', as
     readTranscriptAsync: never,
     readGitAsync: async (cwd) => (cwd === '/stuck' ? never() : { branch: 'main', root: cwd, repoRoot: cwd }),
   })
+  // readWithin's timer is unref'd (the app's own loop keeps running); in a
+  // bare test process nothing else holds the loop open while reads hang
+  const keepAlive = setInterval(() => {}, 1000)
+  try {
   const base = { session_id: 's1', cwd: '/stuck', transcript_path: '/x.jsonl' }
   const started = Date.now()
   const a = t.handleAsync({ ...base, kind: 'submit', prompt: '고쳐줘' })
@@ -360,4 +364,5 @@ test('handleAsync goes on when a file read hangs, and keeps the event order', as
   assert.strictEqual(r.session.branch, 'main')
   // readWithin: a fast read wins over the timeout
   assert.strictEqual(await readWithin('k', async () => 'ok', 'late', 1000), 'ok')
+  } finally { clearInterval(keepAlive) }
 })
