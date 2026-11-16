@@ -183,6 +183,19 @@ test('pixelizeSheet cuts six aligned frames from a generated sheet', () => {
   assert.strictEqual(JSON.stringify(S.dims(skin)), JSON.stringify({ w: skin.w, h: skin.h }))
 })
 
+test('sheets pick a frame per activity and fall back to the classic choice', () => {
+  const S = loadSprites()
+  const g = (c) => [[c, null], [c, c]]
+  const sheet = { type: 'sheet', w: 2, h: 2, frames: { idle: g('#000001'), happy: g('#000002'), sad: [g('#000003'), g('#000004')], sit: g('#000005') } }
+  assert.strictEqual(S.sheetFrame({ act: 'sad', expr: 'sad' }, sheet), 'sad')
+  assert.strictEqual(S.sheetFrame({ act: 'work', dy: 2 }, sheet), 'sit') // no work frame: sit
+  assert.strictEqual(S.sheetFrame({ act: 'love', expr: 'love' }, sheet), 'happy') // no love frame: classic choice
+  assert.strictEqual(S.sheetFrame({ act: 'dizzy', expr: 'dizzy' }, sheet), 'idle')
+  assert.strictEqual(S.sheetFrame({ act: 'sad', walkFrame: 2 }, sheet), 'walk2') // walking wins
+  assert.ok(S.isAnimated(sheet))
+  assert.ok(!S.isAnimated({ type: 'sheet', w: 2, h: 2, frames: { idle: g('#000001') } }))
+})
+
 test('white parts inside a drawn character stay opaque (only outside white is background)', () => {
   const oni = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets', 'presets', 'onigiri.json'), 'utf8'))
   const g = oni.frames.idle

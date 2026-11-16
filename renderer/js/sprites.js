@@ -304,9 +304,36 @@ window.CB = window.CB || {}
 
   const isSheet = (skin) => !!skin && skin.type === 'sheet'
 
-  // Engine pose → one of the six drawn frames.
-  function sheetFrame(o) {
+  // A sheet frame is one grid (rows of colors) or an animation: a list of
+  // grids played in a loop at `skin.fps`.
+  const isAnim = (f) => Array.isArray(f) && Array.isArray(f[0]) && Array.isArray(f[0][0])
+  // asked every frame, so remembered on the skin
+  const isAnimated = (skin = activeSkin) => {
+    if (!isSheet(skin)) return false
+    if (skin._anim === undefined) skin._anim = Object.values(skin.frames).some(isAnim)
+    return skin._anim
+  }
+  const SHEET_FPS = 6
+
+  // What the pet is doing → drawn frames to try, in order. A sheet only needs
+  // `idle`; anything it lacks falls back to the classic choice below.
+  const ACT_FRAMES = {
+    sit: ['sit'],
+    work: ['work', 'sit'],
+    love: ['love'],
+    wave: ['wave'],
+    sad: ['sad'],
+    dizzy: ['dizzy'],
+    eat: ['eat'],
+    dragged: ['dragged'],
+    tossed: ['dragged'],
+  }
+
+  // Engine pose → one of the drawn frames. `o.act` is the pet's activity name.
+  function sheetFrame(o, skin = activeSkin) {
     if (o.walkFrame) return 'walk' + o.walkFrame
+    const own = o.act && skin?.frames && (ACT_FRAMES[o.act] || []).find(k => skin.frames[k])
+    if (own) return own
     if (o.expr === 'sleep') return 'sleep'
     if (o.expr === 'blink') return 'blink'
     if ((o.armL === 'up' && o.armR === 'up') || o.expr === 'happy' || o.expr === 'love') return 'happy'
@@ -343,11 +370,14 @@ window.CB = window.CB || {}
   function petCanvas(o, skin = activeSkin) {
     if (skin && !skin._id) skin._id = 's' + (++skinSeq)
     if (isSheet(skin)) {
-      let frame = sheetFrame(o)
+      let frame = sheetFrame(o, skin)
       if (!skin.frames[frame]) frame = 'idle'
-      const key = skin._id + ':' + frame
+      let grid = skin.frames[frame]
+      let i = 0
+      if (isAnim(grid)) { i = (o.tick || 0) % grid.length; grid = grid[i] }
+      const key = skin._id + ':' + frame + '#' + i
       let c = cache.get(key)
-      if (!c) { c = toCanvas(skin.frames[frame] || skin.frames.idle); cache.set(key, c) }
+      if (!c) { c = toCanvas(grid); cache.set(key, c) }
       return c
     }
     const key = (skin ? skin._id + (skin.glasses ? 'g' : '') + (skin.blush === false ? 'n' : '') : '-') + JSON.stringify(o)
@@ -386,5 +416,5 @@ window.CB = window.CB || {}
     return c
   }
 
-  CB.Sprites = { PET_W, PET_H, TOP, setSkin, getSkin: () => activeSkin, isSheet, dims, pixelScale, sheetFrame, PAL, composePet, petCanvas, itemCanvas, itemElement, blit, ITEMS }
+  CB.Sprites = { PET_W, PET_H, TOP, setSkin, getSkin: () => activeSkin, isSheet, isAnimated, SHEET_FPS, dims, pixelScale, sheetFrame, PAL, composePet, petCanvas, itemCanvas, itemElement, blit, ITEMS }
 })()

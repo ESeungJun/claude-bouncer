@@ -25,7 +25,7 @@
   }
 
   // 다음 프레임이 필요하면 0, 아니면 쉬어도 되는 시간(초).
-  // s: { act, z, vz, squash, blinkAt, blinkT, sayTimer, t, busy, menuOpen, pressing, needTick }
+  // s: { act, z, vz, squash, blinkAt, blinkT, sayTimer, t, busy, menuOpen, pressing, needTick, animPeriod }
   function restDelay(s) {
     if (s.busy || s.menuOpen || s.pressing) return 0
     if (s.z > 0 || s.vz > 0 || Math.abs(s.squash || 0) > 0) return 0
@@ -43,6 +43,8 @@
     }
     wait = Math.min(wait, s.blinkT > 0 ? s.blinkT : s.blinkAt)
     if (s.sayTimer > 0) wait = Math.min(wait, s.sayTimer)
+    // 움직이는 그림 스킨: 다음 장으로 넘어갈 때 깬다
+    if (s.animPeriod > 0) wait = Math.min(wait, untilNext(s.t || 0, s.animPeriod))
     wait = Math.min(wait, NEED_TICK - (s.needTick || 0))
     return wait >= MIN_REST ? wait : 0
   }

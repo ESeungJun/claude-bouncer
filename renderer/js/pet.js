@@ -597,6 +597,9 @@ window.CB = window.CB || {}
         }
         if (p.lx) this.facing = p.lx
         p.flip = this.facing === -1
+        // drawn frames per activity, and which picture of an animated one
+        p.act = this.act?.name
+        if (Sprites.isAnimated()) p.tick = Math.floor(this.t * (Sprites.getSkin().fps || Sprites.SHEET_FPS))
       }
       return p
     }
