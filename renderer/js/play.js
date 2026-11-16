@@ -430,10 +430,10 @@ window.CB = window.CB || {}
       if (!g) return {}
       if (g.stun > 0) return { expr: 'dizzy', mouth: 'o' }
       if (g.over) return { expr: 'happy', mouth: 'open', armL: 'up', armR: 'up' }
-      const moving = Math.abs(g.vx || 0) > 30
+      const moving = g.moveT > 0
       const f = Math.floor(p.t / 0.08) % 2
       if (g.kind === 'tag') return { expr: g.caughtT > 0 ? 'wide' : 'happy', mouth: g.caughtT > 0 ? 'o' : 'smile', legs: f ? [2, 1, 2, 1] : [1, 2, 1, 2], bob: f, lx: Math.sign(g.vx || 0) }
-      return { expr: g.happyT > 0 ? 'happy' : 'normal', mouth: g.happyT > 0 ? 'open' : undefined, ly: -1, armL: 'up', armR: 'up', legs: moving ? (f ? [2, 1, 2, 1] : [1, 2, 1, 2]) : undefined }
+      return { expr: g.happyT > 0 ? 'happy' : 'normal', mouth: g.happyT > 0 ? 'open' : undefined, ly: -1, armL: 'up', armR: 'up', legs: moving ? (f ? [2, 1, 2, 1] : [1, 2, 1, 2]) : undefined, lx: moving ? g.dir : undefined }
     }
 
     onGameClick(px, py) {
@@ -488,6 +488,9 @@ window.CB = window.CB || {}
           p.x += clamp(d, -900 * dt, 900 * dt)
         }
         g.vx = (p.x - prev) / Math.max(dt, 0.001)
+        // keep "running" a moment after the mouse stops, so small wobbles
+        // don't flip between the walk and standing pictures every frame
+        if (Math.abs(g.vx) > 30) { g.moveT = 0.25; g.dir = Math.sign(g.vx) } else g.moveT = Math.max(0, (g.moveT || 0) - dt)
 
         // spawn
         g.spawn -= dt
