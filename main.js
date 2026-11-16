@@ -389,16 +389,19 @@ function announce(notification) {
   if (store.data.settings.systemNotify && !quiet) showSystemNotification(notification)
 }
 
+// Files the event needs (transcript, .git) are read off the main thread, so a
+// file that never opens can't freeze the app (#58).
 function onHookEvent(payload) {
-  const { notification, changed, type } = tracker.handle(payload)
-  if (notification) {
-    saveHistory()
-    announce(notification)
-  } else if (changed) {
-    saveHistory()
-  }
-  if (type === 'submit') send(overlay, 'session-busy', true)
-  broadcastData()
+  return tracker.handleAsync(payload).then(({ notification, changed, type }) => {
+    if (notification) {
+      saveHistory()
+      announce(notification)
+    } else if (changed) {
+      saveHistory()
+    }
+    if (type === 'submit') send(overlay, 'session-busy', true)
+    broadcastData()
+  }).catch((e) => console.error('[claude-bouncer] hook event failed:', e.message))
 }
 
 // ---------- "10분 뒤" on a card ----------
@@ -1171,6 +1174,7 @@ function registerIpc() {
 
   ipcMain.on('menu:pet', () => {
     const s = store.data.settings
+    if (IS_MAC) overlay.setAlwaysOnTop(true, 'floating')
     Menu.buildFromTemplate([
       ...actionMenuItems(petAction, { includeMenuOnly: true }),
       { type: 'separator' },
@@ -1181,7 +1185,12 @@ function registerIpc() {
       { label: '돌아다니기', type: 'checkbox', checked: s.roam, click: (i) => setSetting('roam', i.checked) },
       { type: 'separator' },
       { label: '클로디 종료', click: () => { app.isQuitting = true; app.quit() } },
-    ]).popup()
+    ]).popup({
+      // the overlay sits above menus (screen-saver level); drop it while the
+      // menu is open so the menu isn't hidden behind the pet
+      window: overlay,
+      callback: () => { if (overlay && !overlay.isDestroyed()) overlay.setAlwaysOnTop(true, 'screen-saver') },
+    })
   })
 }
 
@@ -1199,7 +1208,16 @@ app.whenReady().then(() => {
   }
   store.data.skins = { list: [], active: '' }
   historyStore = new JsonStore(path.join(app.getPath('userData'), 'history-v2.json'), { items: [] })
-  tracker = new SessionTracker({ history: historyStore.data.items })
+  // all file reads go through handleAsync; the synchronous readers stay unused
+  tracker = new SessionTracker({
+    history: historyStore.data.items, readTranscript: () => ({}), readGit: () => null,
+    // which file hung (#58): kept in the app's log folder
+    onSlowRead: (key) => {
+      const line = `${new Date().toISOString()} slow read (>1.5s), skipped: ${key}\n`
+      const dir = app.getPath('logs')
+      fs.promises.mkdir(dir, { recursive: true }).then(() => fs.promises.appendFile(path.join(dir, 'slow-reads.log'), line)).catch(() => {})
+    },
+  })
   if (!store.data.pet.bornAt) { store.data.pet.bornAt = Date.now(); store.save() }
 
   // Re-register the hook on every launch so it tracks the current binary location.

@@ -58,6 +58,14 @@ test('validSkin refuses looks that would break drawing', () => {
   assert.ok(!validSkin({ type: 'sheet', w: 2, h: 2, frames: { idle: [['red', null]] } }), 'not a hex colour')
   assert.ok(!validSkin({ type: 'sheet', w: 999, h: 2, frames: { idle: [row] } }), 'too big')
   assert.ok(!validSkin(null))
+  // animated frames: a list of grids, within limits
+  const grid = [row, row]
+  assert.ok(validSkin({ type: 'sheet', w: 2, h: 2, fps: 6, frames: { idle: [grid, grid], sad: grid } }))
+  assert.ok(!validSkin({ type: 'sheet', w: 2, h: 2, frames: { idle: [grid, [row, ['#ff0000']]] } }), 'broken picture in an animation')
+  assert.ok(!validSkin({ type: 'sheet', w: 2, h: 2, frames: { idle: Array(17).fill(grid) } }), 'animation too long')
+  const many = Object.fromEntries(Array.from({ length: 5 }, (_, i) => [i ? 'f' + i : 'idle', Array(16).fill(grid)]))
+  assert.ok(!validSkin({ type: 'sheet', w: 2, h: 2, frames: many }), 'too many pictures in all')
+  assert.ok(!validSkin({ type: 'sheet', w: 2, h: 2, fps: 0, frames: { idle: grid } }), 'bad fps')
   const preset = (id) => (id === 'preset:cat' ? 'CAT' : null)
   assert.strictEqual(resolveSkin({ list: [], active: 'preset:cat' }, preset), 'CAT')
   assert.strictEqual(resolveSkin({ list: [{ id: 'x', skin: 'MINE' }], active: 'x' }, preset), 'MINE')
