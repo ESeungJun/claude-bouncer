@@ -230,3 +230,22 @@ test('an enclosed patch of pure background colour stays a hole', () => {
   const cream = skin.frames.blink[Math.floor(g.length / 2)]
   assert.ok(cream.filter(Boolean).length > cream.length * 0.6, 'cream inside the ring stays filled')
 })
+
+test('a skin may bring its own lines, within limits', () => {
+  const { validSkin, LINE_KINDS } = require('../lib/skins')
+  const row = ['#ff0000', null]
+  const sheet = (lines) => ({ type: 'sheet', w: 2, h: 2, frames: { idle: [row, row] }, lines })
+  assert.ok(validSkin(sheet(undefined)))
+  assert.ok(validSkin(sheet({ click: ['야하!'], pet: ['헤헤', '♥'] })))
+  assert.ok(!validSkin(sheet({ shout: ['?'] })), 'unknown kind')
+  assert.ok(!validSkin(sheet({ click: [] })), 'empty list')
+  assert.ok(!validSkin(sheet({ click: ['  '] })), 'blank line')
+  assert.ok(!validSkin(sheet({ click: ['가'.repeat(61)] })), 'too long')
+  assert.ok(!validSkin(sheet({ click: Array(13).fill('a') })), 'too many')
+  assert.ok(!validSkin(sheet({ click: [1] })), 'not text')
+  assert.ok(!validSkin(sheet(['click'])), 'not an object')
+  // every kind the pet says is one a skin may replace
+  const pet = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'js', 'pet.js'), 'utf8')
+  const kinds = [...pet.match(/const LINES = \{([\s\S]*?)\n  \}/)[1].matchAll(/^\s+(\w+):/gm)].map(m => m[1])
+  assert.deepStrictEqual([...kinds].sort(), [...LINE_KINDS].sort())
+})

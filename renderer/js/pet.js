@@ -29,7 +29,38 @@ window.CB = window.CB || {}
     toss: ['우와아!', '꺄아!', '날아간다!'],
     dizzy: ['어지러워…', '빙글빙글…'],
     work: ['열일 중…', '코딩 코딩', '뚝딱뚝딱'],
+    hello: ['안녕! 나는 클로디야'],
+    menu: ['Lv.{level} 클로디 — 뭐 할까?'],
+    levelup: ['레벨 업! Lv.{level} ✨'],
+    again: ['한 번 더!'],
+    cookie: ['쿠키다!'],
+    apple: ['사과다!'],
+    busy: ['바쁜가 보다…'],
+    away: ['자리 비운 사이 알림 {n}개 왔어!'],
+    summon: ['불렀어?', '여기 있어!', '짠!', '왔다!'],
+    summonSleep: ['으음… 불렀어?'],
+    newLook: ['새 모습 어때?'],
+    soccer: ['축구하자! 마우스로 공을 툭 차서 내 골대에 넣어봐 ({goals}골 먼저)'],
+    goal: ['골이다!', '들어갔다!', '내가 넣었어!'],
+    conceded: ['아앗, 먹혔다…', '막을 수 있었는데!', '나이스 골…'],
+    win: ['{score} 내가 이겼다!'],
+    lose: ['{score} 내가 졌다! 다음엔 이길 거야'],
+    fun: ['재밌었다!'],
+    more: ['또 놀자!'],
+    waiting: ['응답 기다리는 세션 {n}개!'],
+    notice: ['새 알림 {n}개!'],
   }
+
+  // A line of this kind: the skin's own (a character's way of talking) if it
+  // has one. {name} in a line is filled from vars (e.g. { level: 3 }).
+  function line(kind, vars = {}) {
+    const own = Sprites.getSkin()?.lines?.[kind]
+    return pick(own?.length ? own : LINES[kind]).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m))
+  }
+
+  // still activities whose drawn animation plays once and then rests (seconds)
+  const REST_ANIM = new Set(['idle', 'sit', 'sleep', 'attend'])
+  const REST_HOLD = 3
 
   class Pet {
     constructor(world) {
@@ -97,7 +128,8 @@ window.CB = window.CB || {}
     // rows of empty headroom above the visible pet (hair fills some with a skin)
     headroom() {
       const skin = Sprites.getSkin()
-      return Sprites.isSheet(skin) ? 0 : skin ? 1 : Sprites.TOP
+      // drawn characters: the picture's own empty top rows (pictures differ in height)
+      return Sprites.isSheet(skin) ? (this.sheetTop || 0) : skin ? 1 : Sprites.TOP
     }
 
     head() { return { x: this.x, y: this.y - this.z - this.ph + this.headroom() * this.scale } }
@@ -178,7 +210,7 @@ window.CB = window.CB || {}
         s.xp -= this.xpNeeded()
         s.level++
         setTimeout(() => {
-          this.say(`레벨 업! Lv.${s.level} ✨`, 3000)
+          this.say(line('levelup', { level: s.level }), 3000)
           this.hop(380)
           this.emote('star', 5)
           Sound.play('levelup')
@@ -204,7 +236,7 @@ window.CB = window.CB || {}
       this.sayTimer = ms / 1000
     }
 
-    sayLine(kind, ms) { this.say(pick(LINES[kind]), ms) }
+    sayLine(kind, ms) { this.say(line(kind), ms) }
 
     emote(kind, count = 1) {
       const h = this.head()
@@ -270,11 +302,15 @@ window.CB = window.CB || {}
           const d = Math.hypot(dx, dy)
           if (d <= tolerance) { then ? then() : this.idle(); return false }
           const step = Math.min(d, sp * dt)
+          const was = { x: this.x, y: this.y }
           this.x += (dx / d) * step
           this.y += (dy / d) * step
           this.lookX = Math.abs(dx) > 2 ? Math.sign(dx) : 0
           this.lookY = Math.abs(dy) > Math.abs(dx) ? Math.sign(dy) : 0
           this.clampPos()
+          // a target the pet can't stand on (e.g. food dropped at the screen edge):
+          // as close as it gets counts as there, instead of walking in place forever
+          if (step > 0 && Math.hypot(this.x - was.x, this.y - was.y) < step * 0.05) { then ? then() : this.idle(); return false }
           return false
         },
         pose: () => {
@@ -423,7 +459,7 @@ window.CB = window.CB || {}
           this.clampPos()
           if (Math.hypot(a.vx, a.vy) < 25 && this.z <= 0) {
             if (a.peak > 1400) this.dizzy()
-            else if (a.peak > 500) this.celebrate(1, { line: '한 번 더!', emote: null })
+            else if (a.peak > 500) this.celebrate(1, { line: line('again'), emote: null })
             else this.idle(1)
           }
           return false
@@ -599,7 +635,21 @@ window.CB = window.CB || {}
         p.flip = this.facing === -1
         // drawn frames per activity, and which picture of an animated one
         p.act = this.act?.name
-        if (Sprites.isAnimated()) p.tick = Math.floor(this.t * (Sprites.getSkin().fps || Sprites.SHEET_FPS))
+        if (Sprites.isAnimated()) {
+          const fps = Sprites.getSkin().fps || Sprites.SHEET_FPS
+          const tick = Math.floor(this.t * fps)
+          // resting: play the picture once, then hold its first frame a while,
+          // so a quiet pet doesn't keep redrawing (CPU) and looks calmer
+          const n = Sprites.sheetLength(p)
+          if (n > 1 && REST_ANIM.has(this.act?.name)) {
+            const k = tick % (n + Math.round(REST_HOLD * fps))
+            p.tick = k < n ? k : 0
+            this.animWait = k < n ? (tick + 1) / fps - this.t : (tick - k + n + Math.round(REST_HOLD * fps)) / fps - this.t
+          } else {
+            p.tick = tick
+            this.animWait = n > 1 ? (tick + 1) / fps - this.t : Infinity
+          }
+        }
       }
       return p
     }
@@ -609,7 +659,9 @@ window.CB = window.CB || {}
       const { bob = 0, tilt = 0, breathe = false, flip = false, ...spriteOpts } = p
       const key = JSON.stringify(spriteOpts)
       if (key !== this.lastPose) {
-        Sprites.blit(this.canvas, Sprites.petCanvas(spriteOpts), this.scale)
+        const c = Sprites.petCanvas(spriteOpts)
+        Sprites.blit(this.canvas, c, this.scale)
+        this.sheetTop = c.top || 0
         this.lastPose = key
       }
       const left = snap(this.x - this.pw / 2)
@@ -641,6 +693,7 @@ window.CB = window.CB || {}
   }
 
   Pet.LINES = LINES
+  Pet.line = line
   CB.Pet = Pet
   CB.util = { rand, pick, clamp }
 })()

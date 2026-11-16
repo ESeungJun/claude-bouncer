@@ -108,9 +108,9 @@
 
   function openMenu(kind) {
     const title = {
-      hungry: pick(Pet.LINES.hungry),
-      play: pick(Pet.LINES.bored),
-      menu: `Lv.${pet.stats.level} 클로디 — 뭐 할까?`,
+      hungry: Pet.line('hungry'),
+      play: Pet.line('bored'),
+      menu: Pet.line('menu', { level: pet.stats.level }),
     }[kind]
     const items = [
       ['feed', '🍪 밥 주기'],
@@ -155,7 +155,7 @@
     menuTimer = setTimeout(() => {
       if (!menuOpen) return
       closeMenu()
-      if (kind !== 'menu') pet.sad(1.6, '바쁜가 보다…')
+      if (kind !== 'menu') pet.sad(1.6, Pet.line('busy'))
     }, kind === 'menu' ? 12000 : 16000)
     Sound.play('pop')
   }
@@ -327,9 +327,9 @@
       if (pet.act?.name === 'sleep') pet.act.dur = 0
       const greet = () => {
         if (n) {
-          pet.wave(3, `자리 비운 사이 알림 ${n}개 왔어!`)
+          pet.wave(3, Pet.line('away', { n }))
           notify.expand()
-        } else pet.wave(2.4, pick(Pet.LINES.welcome))
+        } else pet.wave(2.4, Pet.line('welcome'))
       }
       if (world.canRoam()) pet.approachUser({ then: greet })
       else greet()
@@ -371,7 +371,7 @@
     play.stop()
     pet.emote('star', 5)
     Sound.play('levelup')
-    pet.celebrate(1.6, { line: skin ? '새 모습 어때?' : '원래대로 돌아왔어!', emote: 'heart' })
+    pet.celebrate(1.6, { line: skin ? Pet.line('newLook') : '원래대로 돌아왔어!', emote: 'heart' })
   })
 
   api.onSessionBusy(() => {
@@ -432,9 +432,9 @@
       if (notify.pending.length) {
         notify.expand()
         const need = notify.pending.filter(n => n.kind !== 'done').length
-        pet.attend({ dur: 4, expr: need ? 'wide' : 'normal', line: need ? `응답 기다리는 세션 ${need}개!` : `새 알림 ${notify.pending.length}개!` })
+        pet.attend({ dur: 4, expr: need ? 'wide' : 'normal', line: need ? Pet.line('waiting', { n: need }) : Pet.line('notice', { n: notify.pending.length }) })
       } else {
-        pet.wave(2.2, wasAsleep ? '으음… 불렀어?' : pick(['불렀어?', '여기 있어!', '짠!', '왔다!']))
+        pet.wave(2.2, Pet.line(wasAsleep ? 'summonSleep' : 'summon'))
       }
     }
     if (!world.cursor.inside) { arrive(); return }
@@ -566,7 +566,7 @@
     act: pet.act, z: pet.z, vz: pet.vz, squash: pet.squash,
     blinkAt: pet.blinkAt, blinkT: pet.blinkT, sayTimer: pet.sayTimer, t: pet.t,
     busy: play.busy(), menuOpen, pressing: !!press, needTick,
-    animPeriod: CB.Sprites.isAnimated() ? 1 / (CB.Sprites.getSkin().fps || CB.Sprites.SHEET_FPS) : 0,
+    animWait: CB.Sprites.isAnimated() ? pet.animWait ?? 0 : Infinity,
   })
 
   // Ask for the next frame. Walking and hopping are drawn 30 times a second.
@@ -667,6 +667,6 @@
   // first hello
   setTimeout(() => {
     if (world.settings.dnd) return
-    pet.celebrate(1.4, { line: state.pet.lastSeen ? pick(Pet.LINES.welcome) : '안녕! 나는 클로디야', emote: 'heart' })
+    pet.celebrate(1.4, { line: state.pet.lastSeen ? Pet.line('welcome') : Pet.line('hello'), emote: 'heart' })
   }, 600)
 })()

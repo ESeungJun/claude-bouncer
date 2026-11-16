@@ -1164,6 +1164,7 @@ function registerIpc() {
 
   ipcMain.on('menu:pet', () => {
     const s = store.data.settings
+    if (IS_MAC) overlay.setAlwaysOnTop(true, 'floating')
     Menu.buildFromTemplate([
       ...actionMenuItems(petAction, { includeMenuOnly: true }),
       { type: 'separator' },
@@ -1174,7 +1175,12 @@ function registerIpc() {
       { label: '돌아다니기', type: 'checkbox', checked: s.roam, click: (i) => setSetting('roam', i.checked) },
       { type: 'separator' },
       { label: '클로디 종료', click: () => { app.isQuitting = true; app.quit() } },
-    ]).popup()
+    ]).popup({
+      // the overlay sits above menus (screen-saver level); drop it while the
+      // menu is open so the menu isn't hidden behind the pet
+      window: overlay,
+      callback: () => { if (overlay && !overlay.isDestroyed()) overlay.setAlwaysOnTop(true, 'screen-saver') },
+    })
   })
 }
 
