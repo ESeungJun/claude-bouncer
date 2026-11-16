@@ -58,6 +58,10 @@ window.CB = window.CB || {}
     return pick(own?.length ? own : LINES[kind]).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m))
   }
 
+  // still activities whose drawn animation plays once and then rests (seconds)
+  const REST_ANIM = new Set(['idle', 'sit', 'sleep', 'attend'])
+  const REST_HOLD = 3
+
   class Pet {
     constructor(world) {
       this.w = world
@@ -124,7 +128,8 @@ window.CB = window.CB || {}
     // rows of empty headroom above the visible pet (hair fills some with a skin)
     headroom() {
       const skin = Sprites.getSkin()
-      return Sprites.isSheet(skin) ? 0 : skin ? 1 : Sprites.TOP
+      // drawn characters: the picture's own empty top rows (pictures differ in height)
+      return Sprites.isSheet(skin) ? (this.sheetTop || 0) : skin ? 1 : Sprites.TOP
     }
 
     head() { return { x: this.x, y: this.y - this.z - this.ph + this.headroom() * this.scale } }
@@ -297,11 +302,15 @@ window.CB = window.CB || {}
           const d = Math.hypot(dx, dy)
           if (d <= tolerance) { then ? then() : this.idle(); return false }
           const step = Math.min(d, sp * dt)
+          const was = { x: this.x, y: this.y }
           this.x += (dx / d) * step
           this.y += (dy / d) * step
           this.lookX = Math.abs(dx) > 2 ? Math.sign(dx) : 0
           this.lookY = Math.abs(dy) > Math.abs(dx) ? Math.sign(dy) : 0
           this.clampPos()
+          // a target the pet can't stand on (e.g. food dropped at the screen edge):
+          // as close as it gets counts as there, instead of walking in place forever
+          if (step > 0 && Math.hypot(this.x - was.x, this.y - was.y) < step * 0.05) { then ? then() : this.idle(); return false }
           return false
         },
         pose: () => {
@@ -626,7 +635,21 @@ window.CB = window.CB || {}
         p.flip = this.facing === -1
         // drawn frames per activity, and which picture of an animated one
         p.act = this.act?.name
-        if (Sprites.isAnimated()) p.tick = Math.floor(this.t * (Sprites.getSkin().fps || Sprites.SHEET_FPS))
+        if (Sprites.isAnimated()) {
+          const fps = Sprites.getSkin().fps || Sprites.SHEET_FPS
+          const tick = Math.floor(this.t * fps)
+          // resting: play the picture once, then hold its first frame a while,
+          // so a quiet pet doesn't keep redrawing (CPU) and looks calmer
+          const n = Sprites.sheetLength(p)
+          if (n > 1 && REST_ANIM.has(this.act?.name)) {
+            const k = tick % (n + Math.round(REST_HOLD * fps))
+            p.tick = k < n ? k : 0
+            this.animWait = k < n ? (tick + 1) / fps - this.t : (tick - k + n + Math.round(REST_HOLD * fps)) / fps - this.t
+          } else {
+            p.tick = tick
+            this.animWait = n > 1 ? (tick + 1) / fps - this.t : Infinity
+          }
+        }
       }
       return p
     }
@@ -636,7 +659,9 @@ window.CB = window.CB || {}
       const { bob = 0, tilt = 0, breathe = false, flip = false, ...spriteOpts } = p
       const key = JSON.stringify(spriteOpts)
       if (key !== this.lastPose) {
-        Sprites.blit(this.canvas, Sprites.petCanvas(spriteOpts), this.scale)
+        const c = Sprites.petCanvas(spriteOpts)
+        Sprites.blit(this.canvas, c, this.scale)
+        this.sheetTop = c.top || 0
         this.lastPose = key
       }
       const left = snap(this.x - this.pw / 2)
