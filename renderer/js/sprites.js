@@ -329,6 +329,13 @@ window.CB = window.CB || {}
     tossed: ['dragged'],
   }
 
+  // how many pictures the drawn frame for this pose has (1 = still)
+  function sheetLength(o, skin = activeSkin) {
+    if (!isSheet(skin)) return 1
+    const f = skin.frames[sheetFrame(o, skin)] || skin.frames.idle
+    return isAnim(f) ? f.length : 1
+  }
+
   // Engine pose → one of the drawn frames. `o.act` is the pet's activity name.
   function sheetFrame(o, skin = activeSkin) {
     if (o.walkFrame) return 'walk' + o.walkFrame
@@ -429,5 +436,5 @@ window.CB = window.CB || {}
     return c
   }
 
-  CB.Sprites = { PET_W, PET_H, TOP, setSkin, getSkin: () => activeSkin, isSheet, isAnimated, SHEET_FPS, dims, pixelScale, sheetFrame, PAL, composePet, petCanvas, itemCanvas, itemElement, blit, ITEMS }
+  CB.Sprites = { PET_W, PET_H, TOP, setSkin, getSkin: () => activeSkin, isSheet, isAnimated, SHEET_FPS, sheetLength, dims, pixelScale, sheetFrame, PAL, composePet, petCanvas, itemCanvas, itemElement, blit, ITEMS }
 })()

@@ -30,8 +30,9 @@ test('the rest ends at whatever is due first', () => {
   // waiting next to a card: the next hop
   assert.strictEqual(Pace.restDelay(still({ act: { name: 'attend', t: 0, dur: 60, hopEvery: 60, hopT: 2.5 } })), 2.5)
   // an animated look: wake for its next picture, even while sitting still
-  assert.ok(Math.abs(Pace.restDelay(still({ t: 1.1, animPeriod: 1 / 6 })) - (1 / 6 - (1.1 % (1 / 6)))) < 1e-9)
-  assert.ok(Pace.restDelay(still({ t: 0.05, animPeriod: 1 / 6 })) > 0, 'still rests between pictures')
+  assert.strictEqual(Pace.restDelay(still({ animWait: 0.1 })), 0.1)
+  // ...and a resting picture that holds its frame lets the loop sleep that long
+  assert.strictEqual(Pace.restDelay(still({ animWait: 2.5 })), 2.5)
 })
 
 test('anything due within a frame or two keeps the loop running', () => {
