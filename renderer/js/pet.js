@@ -58,9 +58,9 @@ window.CB = window.CB || {}
     return pick(own?.length ? own : LINES[kind]).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m))
   }
 
-  // still activities whose drawn animation plays once and then rests (seconds)
-  const REST_ANIM = new Set(['idle', 'sit', 'sleep', 'attend'])
-  const REST_HOLD = 3
+  // activities whose drawn animation plays once and then holds its first
+  // picture this many seconds (CPU, and a calmer pet)
+  const REST_HOLD = { idle: 3, sit: 3, sleep: 3, attend: 3, work: 1.5 }
 
   class Pet {
     constructor(world) {
@@ -641,10 +641,11 @@ window.CB = window.CB || {}
           // resting: play the picture once, then hold its first frame a while,
           // so a quiet pet doesn't keep redrawing (CPU) and looks calmer
           const n = Sprites.sheetLength(p)
-          if (n > 1 && REST_ANIM.has(this.act?.name)) {
-            const k = tick % (n + Math.round(REST_HOLD * fps))
+          const hold = Math.round((REST_HOLD[this.act?.name] || 0) * fps)
+          if (n > 1 && hold) {
+            const k = tick % (n + hold)
             p.tick = k < n ? k : 0
-            this.animWait = k < n ? (tick + 1) / fps - this.t : (tick - k + n + Math.round(REST_HOLD * fps)) / fps - this.t
+            this.animWait = k < n ? (tick + 1) / fps - this.t : (tick - k + n + hold) / fps - this.t
           } else {
             p.tick = tick
             this.animWait = n > 1 ? (tick + 1) / fps - this.t : Infinity

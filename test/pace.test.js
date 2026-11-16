@@ -33,6 +33,10 @@ test('the rest ends at whatever is due first', () => {
   assert.strictEqual(Pace.restDelay(still({ animWait: 0.1 })), 0.1)
   // ...and a resting picture that holds its frame lets the loop sleep that long
   assert.strictEqual(Pace.restDelay(still({ animWait: 2.5 })), 2.5)
+  // a drawn skin doesn't wake for arm poses it never draws
+  const working = (o) => ({ ...still(), act: { name: 'work', t: 0.05, dur: 20 }, ...o })
+  assert.ok(Pace.restDelay(working()) < 0.12, 'classic pet types every 0.12s')
+  assert.strictEqual(Pace.restDelay(working({ sheet: true, animWait: 1.2 })), 1.2)
 })
 
 test('anything due within a frame or two keeps the loop running', () => {
