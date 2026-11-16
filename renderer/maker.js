@@ -130,6 +130,7 @@
     const preview = await api.previewPhoto(file)
     if (!preview) { progress('이 파일은 열 수 없어요 (jpg, png, webp, heic)', true); return }
     photoPath = file
+    refreshCredits()
     $('#mk-photo').src = preview
     $('#mk-photo').classList.add('on')
     $('#mk-drop-text').textContent = '다른 사진으로 바꾸려면 다시 눌러요'
@@ -305,7 +306,14 @@
 
   api.onSkins((s) => { state = s; render() })
   render()
-  if (state.mcp) api.refreshSkinState().then((s) => { state = s; render(); loadCost() })
+  // Credits and cost need the saved login, which asks the OS keychain: load
+  // them once the user starts making a look (picks a photo), not on panel open.
+  let creditsLoaded = false
+  function refreshCredits() {
+    if (creditsLoaded || !state.mcp) return
+    creditsLoaded = true
+    api.refreshSkinState().then((s) => { state = s; render(); loadCost() })
+  }
   // ---------- "make one for me" request (compose window) ----------
 
   function openCompose() {

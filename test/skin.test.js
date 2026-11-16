@@ -231,6 +231,27 @@ test('an enclosed patch of pure background colour stays a hole', () => {
   assert.ok(cream.filter(Boolean).length > cream.length * 0.6, 'cream inside the ring stays filled')
 })
 
+test('showing Higgsfield status never opens the keychain', () => {
+  const { HiggsfieldMcp } = require('../lib/higgsfield-mcp')
+  const os = require('os')
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cb-kc-')), 'mcp.bin')
+  let opened = 0
+  const safeStorage = {
+    isEncryptionAvailable: () => { opened++; return true },
+    encryptString: (t) => { opened++; return Buffer.from('E' + t) },
+    decryptString: (b) => { opened++; return b.toString().slice(1) },
+  }
+  assert.strictEqual(new HiggsfieldMcp({ file, safeStorage, openUrl: () => {} }).hasLogin, false)
+  fs.writeFileSync(file, 'E' + JSON.stringify({ tokens: { access_token: 't' } }))
+  const hf = new HiggsfieldMcp({ file, safeStorage, openUrl: () => {} })
+  assert.strictEqual(hf.hasLogin, true)
+  assert.strictEqual(opened, 0, 'status alone must not touch the keychain')
+  // actually using it reads (and decrypts) the saved login
+  assert.strictEqual(hf.signedIn, true)
+  assert.ok(opened > 0)
+  fs.rmSync(path.dirname(file), { recursive: true })
+})
+
 test('a skin may bring its own lines, within limits', () => {
   const { validSkin, LINE_KINDS } = require('../lib/skins')
   const row = ['#ff0000', null]
