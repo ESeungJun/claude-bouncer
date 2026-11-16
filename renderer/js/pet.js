@@ -124,7 +124,8 @@ window.CB = window.CB || {}
     // rows of empty headroom above the visible pet (hair fills some with a skin)
     headroom() {
       const skin = Sprites.getSkin()
-      return Sprites.isSheet(skin) ? 0 : skin ? 1 : Sprites.TOP
+      // drawn characters: the picture's own empty top rows (pictures differ in height)
+      return Sprites.isSheet(skin) ? (this.sheetTop || 0) : skin ? 1 : Sprites.TOP
     }
 
     head() { return { x: this.x, y: this.y - this.z - this.ph + this.headroom() * this.scale } }
@@ -640,7 +641,9 @@ window.CB = window.CB || {}
       const { bob = 0, tilt = 0, breathe = false, flip = false, ...spriteOpts } = p
       const key = JSON.stringify(spriteOpts)
       if (key !== this.lastPose) {
-        Sprites.blit(this.canvas, Sprites.petCanvas(spriteOpts), this.scale)
+        const c = Sprites.petCanvas(spriteOpts)
+        Sprites.blit(this.canvas, c, this.scale)
+        this.sheetTop = c.top || 0
         this.lastPose = key
       }
       const left = snap(this.x - this.pw / 2)

@@ -367,17 +367,30 @@ window.CB = window.CB || {}
     cache.clear()
   }
 
+  // rows at the top of a grid with nothing drawn
+  function topRows(grid) {
+    const r = grid.findIndex(row => row.some(Boolean))
+    return r < 0 ? 0 : r
+  }
+
   function petCanvas(o, skin = activeSkin) {
     if (skin && !skin._id) skin._id = 's' + (++skinSeq)
     if (isSheet(skin)) {
       let frame = sheetFrame(o, skin)
       if (!skin.frames[frame]) frame = 'idle'
-      let grid = skin.frames[frame]
+      const all = skin.frames[frame]
+      let grid = all
       let i = 0
       if (isAnim(grid)) { i = (o.tick || 0) % grid.length; grid = grid[i] }
       const key = skin._id + ':' + frame + '#' + i
       let c = cache.get(key)
-      if (!c) { c = toCanvas(grid); cache.set(key, c) }
+      if (!c) {
+        c = toCanvas(grid)
+        // empty rows above the drawing (lowest over the whole animation, so a
+        // speech bubble placed on the head doesn't bob with each picture)
+        c.top = Math.min(...(isAnim(all) ? all : [all]).map(topRows))
+        cache.set(key, c)
+      }
       return c
     }
     const key = (skin ? skin._id + (skin.glasses ? 'g' : '') + (skin.blush === false ? 'n' : '') : '-') + JSON.stringify(o)
