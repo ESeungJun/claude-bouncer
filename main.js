@@ -588,13 +588,20 @@ function broadcastSkin() {
   send(panel, 'skins', skinState())
 }
 
+// The saved key's id is plain text; only the secret needs the keychain.
+function credsId() {
+  try { return JSON.parse(fs.readFileSync(credsPath(), 'utf8')).keyId || '' } catch { return '' }
+}
+
+// Status for the panel. Never decrypts anything (that would ask the keychain
+// every time the panel opens); real Higgsfield calls do that when they run.
 function skinState() {
-  const c = loadCreds()
+  const keyId = credsId()
   return {
-    mcp: mcp().signedIn,
+    mcp: mcp().hasLogin,
     credits: hfCredits,
-    hasKey: !!c,
-    keyId: c ? c.keyId.slice(0, 6) + '…' : '',
+    hasKey: !!keyId,
+    keyId: keyId ? keyId.slice(0, 6) + '…' : '',
     list: skinsStore.data.list,
     // names only; the (large, never-changing) pixel data comes once via skin:presets
     presets: PRESETS.filter(p => presetSkin(p.id)).map(p => ({ id: p.id, name: p.name })),
