@@ -53,7 +53,7 @@ window.CB = window.CB || {}
       this.item = { kind, el: node, hint, x: this.w.cursor.x, y: this.w.cursor.y, z: 0, vz: 0, t: 0, bites: 0 }
       this.mode = 'holding'
       this.w.captureAll('holding')
-      this.pet.say(kind === 'apple' ? '사과다!' : '쿠키다!', 1500)
+      this.pet.say(CB.Pet.line(kind), 1500)
       this.pet.attend({ dur: 8, expr: 'wide' })
     }
 
@@ -157,7 +157,7 @@ window.CB = window.CB || {}
       this.placeGoals()
       this.renderScore()
       this.foot = null
-      this.pet.say(`축구하자! 마우스로 공을 툭 차서 내 골대에 넣어봐 (${WIN_GOALS}골 먼저)`, 3400)
+      this.pet.say(CB.Pet.line('soccer', { goals: WIN_GOALS }), 3400)
       this.chase()
     }
 
@@ -305,10 +305,10 @@ window.CB = window.CB || {}
       const p = this.pet
       if (scorer === 'pet') {
         Sound.play('done')
-        p.celebrate(1.2, { line: pick(['골이다!', '들어갔다!', '내가 넣었어!']), emote: 'star' })
+        p.celebrate(1.2, { line: CB.Pet.line('goal'), emote: 'star' })
       } else {
         Sound.play('catch')
-        p.sad(1.2, pick(['아앗, 먹혔다…', '막을 수 있었는데!', '나이스 골…']))
+        p.sad(1.2, CB.Pet.line('conceded'))
       }
       if (b.score[scorer] >= WIN_GOALS) setTimeout(() => { if (this.ball === b) this.finishSoccer(scorer) }, 1200)
     }
@@ -318,7 +318,7 @@ window.CB = window.CB || {}
       const p = this.pet
       p.boost({ fun: 20, energy: -5, xp: 5 + b.score.me * 2 })
       Sound.play(winner === 'me' ? 'levelup' : 'end')
-      const line = winner === 'me' ? `${b.score.me}:${b.score.pet} 내가 졌다! 다음엔 이길 거야` : `${b.score.pet}:${b.score.me} 내가 이겼다!`
+      const line = winner === 'me' ? CB.Pet.line('lose', { score: `${b.score.me}:${b.score.pet}` }) : CB.Pet.line('win', { score: `${b.score.pet}:${b.score.me}` })
       this.endBall(false)
       p.boost({ played: 1 })
       if (winner === 'me') p.sad(2.2, line)
@@ -367,7 +367,7 @@ window.CB = window.CB || {}
       if (this.mode === 'ball') this.mode = null
       if (talk) {
         this.pet.boost({ played: 1, xp: 3 })
-        this.pet.celebrate(1.2, { line: '재밌었다!', emote: 'heart' })
+        this.pet.celebrate(1.2, { line: CB.Pet.line('fun'), emote: 'heart' })
         this.w.saveSoon()
       }
     }
@@ -586,7 +586,7 @@ window.CB = window.CB || {}
       g.box.remove()
       this.game = null
       if (this.mode === 'game') this.mode = null
-      if (talk) this.pet.celebrate(1, { line: '또 놀자!', emote: 'heart' })
+      if (talk) this.pet.celebrate(1, { line: CB.Pet.line('more'), emote: 'heart' })
       else this.pet.idle(0.5)
     }
 

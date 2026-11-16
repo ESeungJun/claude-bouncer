@@ -30,12 +30,30 @@ window.CB = window.CB || {}
     dizzy: ['어지러워…', '빙글빙글…'],
     work: ['열일 중…', '코딩 코딩', '뚝딱뚝딱'],
     hello: ['안녕! 나는 클로디야'],
+    menu: ['Lv.{level} 클로디 — 뭐 할까?'],
+    levelup: ['레벨 업! Lv.{level} ✨'],
+    again: ['한 번 더!'],
+    cookie: ['쿠키다!'],
+    apple: ['사과다!'],
+    busy: ['바쁜가 보다…'],
+    away: ['자리 비운 사이 알림 {n}개 왔어!'],
+    summon: ['불렀어?', '여기 있어!', '짠!', '왔다!'],
+    summonSleep: ['으음… 불렀어?'],
+    newLook: ['새 모습 어때?'],
+    soccer: ['축구하자! 마우스로 공을 툭 차서 내 골대에 넣어봐 ({goals}골 먼저)'],
+    goal: ['골이다!', '들어갔다!', '내가 넣었어!'],
+    conceded: ['아앗, 먹혔다…', '막을 수 있었는데!', '나이스 골…'],
+    win: ['{score} 내가 이겼다!'],
+    lose: ['{score} 내가 졌다! 다음엔 이길 거야'],
+    fun: ['재밌었다!'],
+    more: ['또 놀자!'],
   }
 
-  // A line of this kind: the skin's own (a character's way of talking) if it has one.
-  function line(kind) {
+  // A line of this kind: the skin's own (a character's way of talking) if it
+  // has one. {name} in a line is filled from vars (e.g. { level: 3 }).
+  function line(kind, vars = {}) {
     const own = Sprites.getSkin()?.lines?.[kind]
-    return pick(own?.length ? own : LINES[kind])
+    return pick(own?.length ? own : LINES[kind]).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m))
   }
 
   class Pet {
@@ -185,7 +203,7 @@ window.CB = window.CB || {}
         s.xp -= this.xpNeeded()
         s.level++
         setTimeout(() => {
-          this.say(`레벨 업! Lv.${s.level} ✨`, 3000)
+          this.say(line('levelup', { level: s.level }), 3000)
           this.hop(380)
           this.emote('star', 5)
           Sound.play('levelup')
@@ -430,7 +448,7 @@ window.CB = window.CB || {}
           this.clampPos()
           if (Math.hypot(a.vx, a.vy) < 25 && this.z <= 0) {
             if (a.peak > 1400) this.dizzy()
-            else if (a.peak > 500) this.celebrate(1, { line: '한 번 더!', emote: null })
+            else if (a.peak > 500) this.celebrate(1, { line: line('again'), emote: null })
             else this.idle(1)
           }
           return false

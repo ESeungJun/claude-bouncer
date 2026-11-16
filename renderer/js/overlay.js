@@ -110,7 +110,7 @@
     const title = {
       hungry: Pet.line('hungry'),
       play: Pet.line('bored'),
-      menu: `Lv.${pet.stats.level} 클로디 — 뭐 할까?`,
+      menu: Pet.line('menu', { level: pet.stats.level }),
     }[kind]
     const items = [
       ['feed', '🍪 밥 주기'],
@@ -155,7 +155,7 @@
     menuTimer = setTimeout(() => {
       if (!menuOpen) return
       closeMenu()
-      if (kind !== 'menu') pet.sad(1.6, '바쁜가 보다…')
+      if (kind !== 'menu') pet.sad(1.6, Pet.line('busy'))
     }, kind === 'menu' ? 12000 : 16000)
     Sound.play('pop')
   }
@@ -327,7 +327,7 @@
       if (pet.act?.name === 'sleep') pet.act.dur = 0
       const greet = () => {
         if (n) {
-          pet.wave(3, `자리 비운 사이 알림 ${n}개 왔어!`)
+          pet.wave(3, Pet.line('away', { n }))
           notify.expand()
         } else pet.wave(2.4, Pet.line('welcome'))
       }
@@ -371,7 +371,7 @@
     play.stop()
     pet.emote('star', 5)
     Sound.play('levelup')
-    pet.celebrate(1.6, { line: skin ? '새 모습 어때?' : '원래대로 돌아왔어!', emote: 'heart' })
+    pet.celebrate(1.6, { line: skin ? Pet.line('newLook') : '원래대로 돌아왔어!', emote: 'heart' })
   })
 
   api.onSessionBusy(() => {
@@ -434,7 +434,7 @@
         const need = notify.pending.filter(n => n.kind !== 'done').length
         pet.attend({ dur: 4, expr: need ? 'wide' : 'normal', line: need ? `응답 기다리는 세션 ${need}개!` : `새 알림 ${notify.pending.length}개!` })
       } else {
-        pet.wave(2.2, wasAsleep ? '으음… 불렀어?' : pick(['불렀어?', '여기 있어!', '짠!', '왔다!']))
+        pet.wave(2.2, Pet.line(wasAsleep ? 'summonSleep' : 'summon'))
       }
     }
     if (!world.cursor.inside) { arrive(); return }

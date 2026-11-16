@@ -240,7 +240,7 @@ test('a skin may bring its own lines, within limits', () => {
   assert.ok(!validSkin(sheet({ shout: ['?'] })), 'unknown kind')
   assert.ok(!validSkin(sheet({ click: [] })), 'empty list')
   assert.ok(!validSkin(sheet({ click: ['  '] })), 'blank line')
-  assert.ok(!validSkin(sheet({ click: ['가'.repeat(41)] })), 'too long')
+  assert.ok(!validSkin(sheet({ click: ['가'.repeat(61)] })), 'too long')
   assert.ok(!validSkin(sheet({ click: Array(13).fill('a') })), 'too many')
   assert.ok(!validSkin(sheet({ click: [1] })), 'not text')
   assert.ok(!validSkin(sheet(['click'])), 'not an object')
