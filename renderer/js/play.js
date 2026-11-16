@@ -73,19 +73,30 @@ window.CB = window.CB || {}
       Sound.play('pop')
       const p = this.pet
       const side = p.x < it.x ? -1 : 1
-      p.walkTo(it.x + side * (p.pw * 0.45), it.y, {
+      // A drawn character whose eat picture already shows it eating picks the
+      // snack up instead of nibbling it from the side (two foods at once looks off).
+      const skin = Sprites.getSkin()
+      const own = Sprites.isSheet(skin) && !!skin.frames.eat
+      p.walkTo(it.x + side * (p.pw * (own ? 0.1 : 0.45)), it.y, {
         run: true,
-        then: () => p.eat({ nibble: (n) => this.nibble(n) }, () => this.finishFood()),
+        then: () => {
+          if (own) { it.held = true; it.el.style.visibility = 'hidden' }
+          p.eat({ nibble: (n) => this.nibble(n) }, () => this.finishFood())
+        },
       })
     }
 
     nibble(n) {
       const it = this.item
       if (!it) return
-      it.el.style.clipPath = `inset(0 0 0 ${Math.min(80, n * 25)}%)`
-      const c = Sprites.itemElement('crumb', this.pet.scale, 'crumb')
-      c.style.left = (it.x + rand(-10, 10)) + 'px'
-      c.style.top = (it.y - 6) + 'px'
+      const p = this.pet
+      if (!it.held) it.el.style.clipPath = `inset(0 0 0 ${Math.min(80, n * 25)}%)`
+      // picked up: crumbs fall from the pet's mouth, not from the floor
+      const x = it.held ? p.x : it.x
+      const y = it.held ? p.y - p.ph * 0.35 : it.y - 6
+      const c = Sprites.itemElement('crumb', p.scale, 'crumb')
+      c.style.left = (x + rand(-10, 10)) + 'px'
+      c.style.top = y + 'px'
       this.w.layer.appendChild(c)
       setTimeout(() => c.remove(), 900)
     }
