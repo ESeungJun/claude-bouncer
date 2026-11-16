@@ -567,6 +567,7 @@
     blinkAt: pet.blinkAt, blinkT: pet.blinkT, sayTimer: pet.sayTimer, t: pet.t,
     busy: play.busy(), menuOpen, pressing: !!press, needTick,
     animWait: CB.Sprites.isAnimated() ? pet.animWait ?? 0 : Infinity,
+    sheet: CB.Sprites.isSheet(CB.Sprites.getSkin()),
   })
 
   // Ask for the next frame. Walking and hopping are drawn 30 times a second.
