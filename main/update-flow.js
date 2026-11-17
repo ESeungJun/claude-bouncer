@@ -1,3 +1,4 @@
+'use strict'
 // The update flow seen by the person: periodic checks, the "new version"
 // notification, the manual check dialog, download + verify + swap-in with
 // progress, and the report after a restart when the swap didn't happen.
@@ -14,8 +15,7 @@ const fs = require('fs')
 const { execFile, spawn } = require('child_process')
 const { checkForUpdate, isNewer, releasePage, downloadUpdate, macBundle, cannotInstall, MAC_SWAP_SCRIPT } = require('../lib/update')
 const state = require('./app-state')
-
-const IS_MAC = process.platform === 'darwin'
+const { IS_MAC } = require('./platform')
 
 function createUpdateFlow({ send, onChange }) {
   // latest: a newer published version, or null; error: the last check failed

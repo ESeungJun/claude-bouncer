@@ -1,3 +1,4 @@
+'use strict'
 // Main-process state shared by main.js and the files in main/.
 //
 // Only values that more than one file reads or writes live here; a value used
@@ -8,7 +9,14 @@
 // Exception: a container that is never reassigned (main.js's `ext` object,
 // the `panelPins` Set) may be passed by reference, since every holder sees the
 // same object.
-module.exports = {
+//
+// The object is sealed: its fields can be given new values, but none can be
+// added or removed, so a misspelt `state.overlya = …` fails instead of quietly
+// making a new field nobody reads. A new shared value is added to the list
+// below. Only strict-mode code gets an error for such a write (sloppy code
+// drops it silently), and strict mode belongs to the file doing the write,
+// not to this one, so every file in main/ and main.js starts with 'use strict'.
+module.exports = Object.seal({
   // JSON stores and the session tracker, set once in app.whenReady
   store: null, // state.json: settings, pet, update bookkeeping
   skinsStore: null, // skins.json: custom looks + the active one
@@ -33,4 +41,4 @@ module.exports = {
 
   // Higgsfield account credits last seen (null = unknown)
   hfCredits: null,
-}
+})

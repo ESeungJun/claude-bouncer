@@ -1,3 +1,4 @@
+'use strict'
 const {
   app, BrowserWindow, ipcMain, nativeImage, screen, shell,
   Notification, powerMonitor, globalShortcut, safeStorage,
@@ -22,8 +23,8 @@ const { registerOverlayIpc } = require('./main/ipc/overlay')
 const { registerSkinIpc } = require('./main/ipc/skins')
 const { createUpdateFlow } = require('./main/update-flow')
 const { createMenus } = require('./main/menus')
-
-const IS_MAC = process.platform === 'darwin'
+const { guardIpc } = require('./main/ipc/guard')
+const { IS_MAC } = require('./main/platform')
 
 if (!app.requestSingleInstanceLock()) {
   // A second copy would fight over the port and draw a second pet.
@@ -761,19 +762,22 @@ function startFeeds() {
 
 // Each area registers its own channels (main/ipc/*.js). They get the
 // functions they need from here; shared values come from main/app-state.
+// They get ipcMain only through guardIpc, so every channel turns away
+// messages that don't come from the overlay or the panel.
 function registerIpc() {
-  registerAppIpc(ipcMain, {
+  const ipc = guardIpc(ipcMain)
+  registerAppIpc(ipc, {
     ext, extensionFolder, openFolderSafely,
     activeSkin, displayInfo, snapshot, send,
     setSetting, registerHotkey, togglePanel, syncHook,
     updateState, runUpdateCheck, installUpdate,
   })
-  registerNotificationIpc(ipcMain, {
+  registerNotificationIpc(ipc, {
     openNotification, saveHistory, broadcastData, snapshot,
     settleSession, focusWebChat, openFolderSafely, testNotification,
   })
-  registerOverlayIpc(ipcMain, { compact: COMPACT_OVERLAY, followCursorDisplay, summon, petAction, showPetMenu })
-  registerSkinIpc(ipcMain, {
+  registerOverlayIpc(ipc, { compact: COMPACT_OVERLAY, followCursorDisplay, summon, petAction, showPetMenu })
+  registerSkinIpc(ipc, {
     panelPins, send, mcp, skinState, presetSkin, broadcastSkin,
     saveCreds, preparePhoto, generateSkin, sendRequest,
   })

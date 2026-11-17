@@ -1,3 +1,4 @@
+'use strict'
 // IPC for cards and sessions: open / dismiss / snooze a card, the history
 // list, going to a session, and the test cards from the settings tab.
 // Registered once from main.js (registerIpc), which owns the card logic and

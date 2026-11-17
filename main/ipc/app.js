@@ -1,3 +1,4 @@
+'use strict'
 // IPC for app-wide state: the first state read, settings, pet saves, the
 // panel window, updates, the browser extension, hook reinstall and opening
 // links/folders. Registered once from main.js (registerIpc); main.js passes
