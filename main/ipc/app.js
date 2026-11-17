@@ -12,6 +12,8 @@ function registerAppIpc(ipcMain, {
   setSetting, registerHotkey, togglePanel, syncHook,
   updateState, runUpdateCheck, installUpdate,
 }) {
+  // `ext` is main.js's object, never reassigned (only its fields change), so
+  // holding it by reference here stays current
   ipcMain.handle('ext:status', () => ({
     connected: Date.now() - ext.seenAt < 90000,
     browser: ext.browser,

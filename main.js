@@ -685,6 +685,9 @@ function petAction(action) {
 }
 
 // main/update-flow.js; the tray menu is rebuilt whenever the update status changes
+// onChange must not be called synchronously inside createUpdateFlow:
+// buildTrayMenu is a const defined just below, so that call would throw a TDZ
+// ReferenceError.
 const { updateState, runUpdateCheck, installUpdate, startUpdateChecks } = createUpdateFlow({
   send, onChange: () => buildTrayMenu(),
 })

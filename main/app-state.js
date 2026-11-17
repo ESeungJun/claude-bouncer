@@ -5,6 +5,9 @@
 // this object (`state.overlay`, `state.store.data…`) and never keep a copy in
 // a local variable or pass one in: the overlay window is made again after a
 // crash and the panel is let go a while after it closes, so a copy goes stale.
+// Exception: a container that is never reassigned (main.js's `ext` object,
+// the `panelPins` Set) may be passed by reference, since every holder sees the
+// same object.
 module.exports = {
   // JSON stores and the session tracker, set once in app.whenReady
   store: null, // state.json: settings, pet, update bookkeeping
