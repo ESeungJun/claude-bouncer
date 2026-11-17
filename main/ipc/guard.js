@@ -6,6 +6,8 @@
 //
 // The windows are read from main/app-state on every message (the overlay is
 // made again after a crash, the panel is let go after a while), never kept.
+//
+// `webContents.ipc`와 MessagePort는 쓰지 않는다. 쓰려면 같은 검사를 붙인다.
 const state = require('../app-state')
 
 // the webContents of the windows the app made, as they are right now
@@ -28,14 +30,27 @@ function fromApp(e) {
 // Same shape as ipcMain (handle / on), dropping what fromApp turns away.
 // A turned-away `handle` resolves to undefined; a turned-away `on` gets a
 // returnValue of null so a sendSync caller does not wait forever.
+// Each turned-away channel is logged once (channel name and sender id only,
+// never the arguments), so a flood of bad messages does not flood the log.
 function guardIpc(ipcMain, isAllowed = fromApp) {
+  const warned = new Set()
+  function turnAway(channel, e) {
+    if (warned.has(channel)) return
+    warned.add(channel)
+    console.warn(`[ipc] turned away ${channel} from sender ${e?.sender?.id}`)
+  }
   return {
     handle(channel, fn) {
-      ipcMain.handle(channel, (e, ...args) => (isAllowed(e) ? fn(e, ...args) : undefined))
+      ipcMain.handle(channel, (e, ...args) => {
+        if (isAllowed(e)) return fn(e, ...args)
+        turnAway(channel, e)
+        return undefined
+      })
     },
     on(channel, fn) {
       ipcMain.on(channel, (e, ...args) => {
         if (isAllowed(e)) return fn(e, ...args)
+        turnAway(channel, e)
         e.returnValue = null
       })
     },

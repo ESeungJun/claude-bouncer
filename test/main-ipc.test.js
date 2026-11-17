@@ -314,3 +314,45 @@ test('the platform check lives in main/platform.js only', () => {
   const found = files.filter(f => /process\.platform\s*===\s*'darwin'/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')))
   assert.deepStrictEqual(found, [path.join('main', 'platform.js')])
 })
+
+test('a turned-away channel is logged once, with its name and sender id', () => {
+  const { guardIpc } = require(path.join(ROOT, 'main', 'ipc', 'guard.js'))
+  const fns = new Map()
+  const fakeIpc = { handle: (ch, fn) => fns.set(ch, fn), on: (ch, fn) => fns.set(ch, fn) }
+  const g = guardIpc(fakeIpc, () => false)
+  let ran = 0
+  g.handle('t:handle', () => { ran++ })
+  g.on('t:on', () => { ran++ })
+  const warns = []
+  const realWarn = console.warn
+  console.warn = (...a) => warns.push(a.join(' '))
+  try {
+    for (let i = 0; i < 3; i++) {
+      fns.get('t:handle')({ sender: { id: 7 } }, 'secret')
+      fns.get('t:on')({ sender: { id: 8 }, returnValue: undefined }, 'secret')
+    }
+  } finally {
+    console.warn = realWarn
+  }
+  assert.strictEqual(ran, 0)
+  assert.strictEqual(warns.length, 2)
+  assert.match(warns[0], /t:handle/)
+  assert.match(warns[0], /\b7\b/)
+  assert.match(warns[1], /t:on/)
+  assert.match(warns[1], /\b8\b/)
+  assert.ok(!warns.some(w => w.includes('secret')), 'arguments are not logged')
+})
+
+// Object.seal on main/app-state only throws on a typo'd field in strict code;
+// in sloppy code the write is dropped without a word.
+test('main.js and every main/**/*.js start with \'use strict\'', () => {
+  const files = ['main.js', ...fs.readdirSync(path.join(ROOT, 'main'), { recursive: true }).filter(f => f.endsWith('.js')).map(f => path.join('main', f))]
+  const missing = files.filter(f => !/^'use strict'/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')))
+  assert.deepStrictEqual(missing, [])
+})
+
+test('no webContents.ipc channel bypasses the guard in main/', () => {
+  const files = fs.readdirSync(path.join(ROOT, 'main'), { recursive: true }).filter(f => f.endsWith('.js')).map(f => path.join('main', f))
+  const found = files.filter(f => /\.ipc\.(handle|on)/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')))
+  assert.deepStrictEqual(found, [])
+})
