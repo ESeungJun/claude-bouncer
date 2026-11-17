@@ -9,16 +9,20 @@ const { installClaudeHook, hookScriptPath } = require('./scripts/install-hook')
 const { SessionTracker } = require('./lib/sessions')
 const { JsonStore } = require('./lib/store')
 const { focusTerminal, activateApp, frontTerminal, isFrontTerminal, terminalBundle, frontChanged } = require('./lib/focus')
-const { cursorPollMs, viewBounds, isQuietDone } = require('./lib/pace')
-const { startServer, commandQueue, PORT } = require('./lib/server')
+const { cursorPollMs, isQuietDone } = require('./lib/pace')
+const { startServer, commandQueue } = require('./lib/server')
 const { Higgsfield, MODELS, DEFAULT_MODEL } = require('./lib/higgsfield')
-const { PRESETS, presetLoader, validSkin, resolveSkin } = require('./lib/skins')
+const { PRESETS, presetLoader, resolveSkin } = require('./lib/skins')
 const { requestSender } = require('./lib/request')
 const { actionMenuItems } = require('./lib/actions')
 const { HiggsfieldMcp } = require('./lib/higgsfield-mcp')
 const { checkForUpdate, isNewer, releasePage, downloadUpdate, macBundle, cannotInstall, MAC_SWAP_SCRIPT } = require('./lib/update')
 const { execFile, spawn } = require('child_process')
 const state = require('./main/app-state')
+const { registerAppIpc } = require('./main/ipc/app')
+const { registerNotificationIpc } = require('./main/ipc/notifications')
+const { registerOverlayIpc } = require('./main/ipc/overlay')
+const { registerSkinIpc } = require('./main/ipc/skins')
 
 const IS_MAC = process.platform === 'darwin'
 
@@ -47,7 +51,6 @@ const DEFAULT_HOTKEY = 'Alt+Shift+C'
 // "완료 알림" — the pet comes over only for tasks that took at least this many
 // seconds (0 = always); shorter ones just raise the badge
 const DONE_MIN_CHOICES = [0, 30, 120]
-const SNOOZE_MS = 10 * 60 * 1000
 
 const DEFAULTS = {
   settings: { scale: 3, sound: true, systemNotify: false, dnd: false, focus: false, roam: true, doneMin: 30, launchAtLogin: false, hotkey: DEFAULT_HOTKEY, skinModel: DEFAULT_MODEL },
@@ -64,7 +67,6 @@ const DEFAULTS = {
   // last version we told the user about, so each release is announced once
   update: { notified: '', installing: '' }, // installing: the version a swap was started for
 }
-const SKINS_MAX = 8
 
 // store, skinsStore, tracker, the windows and the overlay view live in
 // main/app-state.js (other files in main/ use them too)
@@ -768,6 +770,28 @@ function createTray() {
   updateTray(snapshot())
 }
 
+// the pet's right-click menu (asked for by the overlay)
+function showPetMenu() {
+  const s = state.store.data.settings
+  if (IS_MAC) state.overlay.setAlwaysOnTop(true, 'floating')
+  Menu.buildFromTemplate([
+    ...actionMenuItems(petAction, { includeMenuOnly: true }),
+    { type: 'separator' },
+    { label: '알림 · 세션 패널', click: () => showPanel('inbox') },
+    { label: '펫 상태', click: () => showPanel('pet') },
+    { label: '방해 금지', type: 'checkbox', checked: s.dnd, click: (i) => setSetting('dnd', i.checked) },
+    { label: '집중 모드', type: 'checkbox', checked: s.focus, click: (i) => setSetting('focus', i.checked) },
+    { label: '돌아다니기', type: 'checkbox', checked: s.roam, click: (i) => setSetting('roam', i.checked) },
+    { type: 'separator' },
+    { label: '클로디 종료', click: () => { app.isQuitting = true; app.quit() } },
+  ]).popup({
+    // the overlay sits above menus (screen-saver level); drop it while the
+    // menu is open so the menu isn't hidden behind the pet
+    window: state.overlay,
+    callback: () => { if (state.overlay && !state.overlay.isDestroyed()) state.overlay.setAlwaysOnTop(true, 'screen-saver') },
+  })
+}
+
 // ---------- settings ----------
 
 function setSetting(key, value) {
@@ -987,204 +1011,23 @@ function startFeeds() {
 
 // ---------- IPC ----------
 
+// Each area registers its own channels (main/ipc/*.js). They get the
+// functions they need from here; shared values come from main/app-state.
 function registerIpc() {
-  ipcMain.handle('ext:status', () => ({
-    connected: Date.now() - ext.seenAt < 90000,
-    browser: ext.browser,
-    folder: extensionFolder(),
-  }))
-  ipcMain.handle('ext:open-folder', () => openFolderSafely(extensionFolder()))
-  ipcMain.handle('state:get', () => ({
-    settings: state.store.data.settings,
-    hotkeyOk: state.hotkeyOk,
-    skin: activeSkin(),
-    pet: state.store.data.pet,
-    platform: process.platform,
-    port: PORT,
-    display: displayInfo(),
-    update: updateState(),
-    ...snapshot(),
-  }))
-  ipcMain.handle('update:check', () => runUpdateCheck())
-  ipcMain.handle('update:open', () => installUpdate())
-  // sent synchronously from the overlay's beforeunload, so it lands before we exit
-  ipcMain.on('pet:save-now', (e, pet) => {
-    if (pet && typeof pet === 'object') {
-      state.store.data.pet = { ...state.store.data.pet, ...pet, best: { ...state.store.data.pet.best, ...(pet.best || {}) } }
-      state.store.flush()
-    }
-    e.returnValue = true
+  registerAppIpc(ipcMain, {
+    ext, extensionFolder, openFolderSafely,
+    activeSkin, displayInfo, snapshot, send,
+    setSetting, registerHotkey, togglePanel, syncHook,
+    updateState, runUpdateCheck, installUpdate,
   })
-  ipcMain.handle('pet:save', (_, pet) => {
-    if (!pet || typeof pet !== 'object') return
-    state.store.data.pet = { ...state.store.data.pet, ...pet, best: { ...state.store.data.pet.best, ...(pet.best || {}) } }
-    state.store.save()
-    send(state.panel, 'pet', state.store.data.pet)
+  registerNotificationIpc(ipcMain, {
+    openNotification, saveHistory, broadcastData, snapshot,
+    settleSession, focusWebChat, openFolderSafely, testNotification,
   })
-  ipcMain.handle('settings:set', (_, key, value) => ({ ...setSetting(key, value), hotkeyOk: state.hotkeyOk }))
-
-  ipcMain.on('mouse:ignore', (_, ignore) => {
-    if (!state.overlay || state.overlay.isDestroyed()) return
-    if (ignore) state.overlay.setIgnoreMouseEvents(true, { forward: true })
-    else state.overlay.setIgnoreMouseEvents(false)
-  })
-
-  // The overlay asks for the part of the work area its window should cover.
-  // A request made for an earlier work area (the pet has since moved to
-  // another screen) is dropped.
-  const fromOverlay = (e, v) => COMPACT_OVERLAY && state.overlay && !state.overlay.isDestroyed() && e.sender === state.overlay.webContents && v && v.epoch === state.viewEpoch
-  ipcMain.handle('overlay:view', (e, v) => {
-    if (!fromOverlay(e, v)) return false
-    const b = viewBounds(v, state.workArea)
-    if (!b) return false
-    state.overlay.setBounds(b)
-    state.viewSize = b.width === state.workArea.width && b.height === state.workArea.height ? null : { width: b.width, height: b.height }
-    return true
-  })
-  // the small window following the pet (same size, new place)
-  ipcMain.on('overlay:move', (e, v) => {
-    if (!fromOverlay(e, v) || !state.viewSize) return
-    const b = viewBounds({ x: v.x, y: v.y, w: state.viewSize.width, h: state.viewSize.height }, state.workArea)
-    if (b) state.overlay.setPosition(b.x, b.y)
-  })
-  ipcMain.on('cursor:track', (e, on) => {
-    if (!state.overlay || e.sender !== state.overlay.webContents) return
-    state.cursorTracking = !!on
-    if (state.cursorTracking) state.pokeCursor()
-  })
-
-  ipcMain.handle('notif:open', (_, id) => openNotification(String(id)))
-  ipcMain.handle('notif:dismiss', (_, id) => {
-    if (state.tracker.markRead(String(id))) { saveHistory(); broadcastData() }
-  })
-  ipcMain.handle('notif:snooze', (_, id) => {
-    if (state.tracker.snooze(String(id), SNOOZE_MS)) { saveHistory(); broadcastData() }
-  })
-  ipcMain.handle('notif:readAll', () => { state.tracker.markAllRead(); saveHistory(); broadcastData() })
-  ipcMain.handle('history:get', () => ({ ...snapshot(), history: state.tracker.history }))
-  ipcMain.handle('history:clear', () => { state.tracker.clear(); saveHistory(); broadcastData() })
-  ipcMain.handle('session:focus', (_, id) => {
-    const s = state.tracker.listSessions().find(x => x.id === id)
-    if (s) settleSession(s.id)
-    if (s?.terminal?.web) return focusWebChat(s.terminal)
-    if (s) return focusTerminal({ terminal: s.terminal, cwd: s.cwd }, { openPath: openFolderSafely })
-  })
-
-  ipcMain.handle('panel:toggle', (_, tab) => togglePanel(tab))
-  ipcMain.handle('panel:close', () => state.panel?.hide())
-  ipcMain.handle('display:follow', () => followCursorDisplay('follow'))
-  ipcMain.handle('pet:action', (_, action) => action === 'summon' ? summon() : petAction(String(action)))
-  // while the panel records a new shortcut, the old one must not fire
-  ipcMain.handle('hotkey:pause', (_, paused) => { if (paused) globalShortcut.unregisterAll(); else registerHotkey() })
-  ipcMain.handle('open-external', (_, url) => {
-    if (typeof url === 'string' && /^https:\/\//.test(url)) shell.openExternal(url)
-  })
-  ipcMain.handle('open-folder', (_, cwd) => openFolderSafely(cwd))
-  ipcMain.handle('test-notify', (_, kind) => testNotification(kind === 'done' ? 'done' : 'permission'))
-  ipcMain.handle('hook:reinstall', () => !!syncHook())
-
-  // custom looks
-  ipcMain.handle('panel:pin', (_, pinned, reason) => {
-    const r = String(reason || 'maker').slice(0, 20)
-    if (pinned) panelPins.add(r); else panelPins.delete(r)
-  })
-  ipcMain.handle('skin:state', () => skinState())
-  ipcMain.handle('skin:presets', () => Object.fromEntries(PRESETS.map(p => [p.id, presetSkin(p.id)]).filter(([, s]) => s)))
-  ipcMain.handle('request:send', async (_, form) => {
-    try { await sendRequest(form || {}); return { ok: true } } catch (e) { return { error: e.message } }
-  })
-  ipcMain.handle('skin:mcp-login', async () => {
-    panelPins.add('login')
-    try {
-      state.hfCredits = await mcp().login()
-      return { ...skinState() }
-    } catch (e) {
-      return { ...skinState(), error: e.message }
-    } finally {
-      panelPins.delete('login')
-      state.panel?.show()
-    }
-  })
-  ipcMain.handle('skin:mcp-logout', () => { mcp().logout(); state.hfCredits = null; return skinState() })
-  ipcMain.handle('skin:refresh', async () => {
-    if (mcp().signedIn) {
-      try { state.hfCredits = await mcp().balance() } catch (e) { return { ...skinState(), error: e.message } }
-    }
-    return skinState()
-  })
-  ipcMain.handle('skin:estimate', async (_, style) => {
-    if (!mcp().signedIn) return null
-    try { return await mcp().estimate(style === 'claudy' ? 'claudy' : 'pixel', 2) } catch { return null }
-  })
-  ipcMain.handle('skin:set-key', (_, keyId, secret) => {
-    try { saveCreds(String(keyId || '').trim(), String(secret || '').trim()) } catch (e) { return { ...skinState(), error: e.message } }
-    return skinState()
-  })
-  ipcMain.handle('skin:pick-photo', async () => {
-    panelPins.add('dialog')
-    try {
-      const r = await dialog.showOpenDialog(state.panel, {
-        title: '내 사진 고르기',
-        properties: ['openFile'],
-        filters: [{ name: '사진', extensions: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'] }],
-      })
-      return r.canceled ? null : r.filePaths[0]
-    } finally {
-      panelPins.delete('dialog')
-      state.panel?.show()
-    }
-  })
-  ipcMain.handle('skin:preview-photo', (_, file) => {
-    try { return 'data:image/jpeg;base64,' + preparePhoto(String(file)).toString('base64') } catch { return null }
-  })
-  ipcMain.handle('skin:generate', async (_, file, style) => {
-    try { return { images: await generateSkin(String(file), style === 'claudy' ? 'claudy' : 'pixel') } } catch (e) { return { error: e.message } }
-  })
-  ipcMain.handle('skin:save', (_, skin, name) => {
-    if (!validSkin(skin)) return skinState()
-    const id = Date.now().toString(36)
-    const list = state.skinsStore.data.list
-    list.unshift({ id, name: String(name || '내 클로디').slice(0, 20), createdAt: Date.now(), skin })
-    if (list.length > SKINS_MAX) list.length = SKINS_MAX
-    state.skinsStore.data.active = id
-    state.skinsStore.save()
-    broadcastSkin()
-    return skinState()
-  })
-  ipcMain.handle('skin:use', (_, id) => {
-    const ok = !id || state.skinsStore.data.list.some(s => s.id === id) || !!presetSkin(id)
-    if (ok) { state.skinsStore.data.active = id || ''; state.skinsStore.save(); broadcastSkin() }
-    return skinState()
-  })
-  ipcMain.handle('skin:delete', (_, id) => {
-    state.skinsStore.data.list = state.skinsStore.data.list.filter(s => s.id !== id)
-    const wasActive = state.skinsStore.data.active === id
-    if (wasActive) state.skinsStore.data.active = ''
-    state.skinsStore.save()
-    if (wasActive) broadcastSkin()
-    else send(state.panel, 'skins', skinState())
-    return skinState()
-  })
-
-  ipcMain.on('menu:pet', () => {
-    const s = state.store.data.settings
-    if (IS_MAC) state.overlay.setAlwaysOnTop(true, 'floating')
-    Menu.buildFromTemplate([
-      ...actionMenuItems(petAction, { includeMenuOnly: true }),
-      { type: 'separator' },
-      { label: '알림 · 세션 패널', click: () => showPanel('inbox') },
-      { label: '펫 상태', click: () => showPanel('pet') },
-      { label: '방해 금지', type: 'checkbox', checked: s.dnd, click: (i) => setSetting('dnd', i.checked) },
-      { label: '집중 모드', type: 'checkbox', checked: s.focus, click: (i) => setSetting('focus', i.checked) },
-      { label: '돌아다니기', type: 'checkbox', checked: s.roam, click: (i) => setSetting('roam', i.checked) },
-      { type: 'separator' },
-      { label: '클로디 종료', click: () => { app.isQuitting = true; app.quit() } },
-    ]).popup({
-      // the overlay sits above menus (screen-saver level); drop it while the
-      // menu is open so the menu isn't hidden behind the pet
-      window: state.overlay,
-      callback: () => { if (state.overlay && !state.overlay.isDestroyed()) state.overlay.setAlwaysOnTop(true, 'screen-saver') },
-    })
+  registerOverlayIpc(ipcMain, { compact: COMPACT_OVERLAY, followCursorDisplay, summon, petAction, showPetMenu })
+  registerSkinIpc(ipcMain, {
+    panelPins, send, mcp, skinState, presetSkin, broadcastSkin,
+    saveCreds, preparePhoto, generateSkin, sendRequest,
   })
 }
 
