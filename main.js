@@ -18,6 +18,7 @@ const { actionMenuItems } = require('./lib/actions')
 const { HiggsfieldMcp } = require('./lib/higgsfield-mcp')
 const { checkForUpdate, isNewer, releasePage, downloadUpdate, macBundle, cannotInstall, MAC_SWAP_SCRIPT } = require('./lib/update')
 const { execFile, spawn } = require('child_process')
+const state = require('./main/app-state')
 
 const IS_MAC = process.platform === 'darwin'
 
@@ -65,9 +66,9 @@ const DEFAULTS = {
 }
 const SKINS_MAX = 8
 
-let store, historyStore, skinsStore, tracker
-let overlay = null
-let panel = null
+// store, skinsStore, tracker, the windows and the overlay view live in
+// main/app-state.js (other files in main/ use them too)
+let historyStore
 let tray = null
 let currentDisplayId = null
 // The overlay window covers the whole work area only while it has to (cards,
@@ -76,12 +77,6 @@ let currentDisplayId = null
 // (macOS only for now: not tried on Windows. CLAUDE_BOUNCER_FULL_OVERLAY=1
 // keeps the old full-size window, for comparing or as a way out.)
 const COMPACT_OVERLAY = IS_MAC && !process.env.CLAUDE_BOUNCER_FULL_OVERLAY
-let workArea = null // work area of the display the pet is on
-let viewEpoch = 0 // bumped whenever main resets the window to the whole work area
-let viewSize = null // { width, height } while the window is small
-let cursorTracking = false // the pet is following the cursor right now
-let pokeCursor = () => {}
-let hotkeyOk = false
 let crashes = [] // overlay crash times (last minute)
 // Reasons the panel must stay open when it loses focus (photo maker on the
 // pet tab, the extension guide, the compose window, a file dialog, a login).
@@ -168,7 +163,7 @@ function syncHook({ uninstall = false } = {}) {
 }
 
 function saveHistory() {
-  historyStore.data.items = tracker.history
+  historyStore.data.items = state.tracker.history
   historyStore.save()
 }
 
@@ -208,55 +203,55 @@ function createOverlay() {
   // NSPanel follows the user across Spaces and floats over full-screen apps.
   if (IS_MAC) opts.type = 'panel'
 
-  overlay = new BrowserWindow(opts)
-  overlay.setIgnoreMouseEvents(true, { forward: true })
+  state.overlay = new BrowserWindow(opts)
+  state.overlay.setIgnoreMouseEvents(true, { forward: true })
   if (IS_MAC) {
-    overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-    overlay.setAlwaysOnTop(true, 'screen-saver')
+    state.overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    state.overlay.setAlwaysOnTop(true, 'screen-saver')
   } else {
-    overlay.setAlwaysOnTop(true, 'screen-saver')
+    state.overlay.setAlwaysOnTop(true, 'screen-saver')
   }
-  overlay.loadFile(path.join('renderer', 'overlay.html'))
-  overlay.once('ready-to-show', () => overlay.showInactive())
-  overlay.webContents.on('render-process-gone', (_, d) => {
+  state.overlay.loadFile(path.join('renderer', 'overlay.html'))
+  state.overlay.once('ready-to-show', () => state.overlay.showInactive())
+  state.overlay.webContents.on('render-process-gone', (_, d) => {
     console.error('[claude-bouncer] overlay crashed:', d.reason)
     if (app.isQuitting || d.reason === 'clean-exit') return
     crashes = crashes.filter(t => Date.now() - t < 60000).concat(Date.now())
     if (crashes.length > 3) {
       // keeps crashing: go back to the classic look; stop retrying after a few more
-      skinsStore.data.active = ''
-      skinsStore.save()
+      state.skinsStore.data.active = ''
+      state.skinsStore.save()
       if (crashes.length > 5) return
     }
-    setTimeout(() => { if (!app.isQuitting) { overlay?.destroy(); createOverlay() } }, 1000 * crashes.length)
+    setTimeout(() => { if (!app.isQuitting) { state.overlay?.destroy(); createOverlay() } }, 1000 * crashes.length)
   })
 }
 
 // The window is (back) over the whole work area: requests the overlay made
 // for the previous one no longer apply.
 function setWorkArea(area) {
-  workArea = { ...area }
-  viewEpoch++
-  viewSize = null
+  state.workArea = { ...area }
+  state.viewEpoch++
+  state.viewSize = null
 }
 
 function displayInfo() {
-  return { ...workArea, epoch: viewEpoch, compact: COMPACT_OVERLAY }
+  return { ...state.workArea, epoch: state.viewEpoch, compact: COMPACT_OVERLAY }
 }
 
 function moveOverlayTo(display, { reason = 'follow' } = {}) {
-  if (!overlay || overlay.isDestroyed() || display.id === currentDisplayId) return false
+  if (!state.overlay || state.overlay.isDestroyed() || display.id === currentDisplayId) return false
   currentDisplayId = display.id
   setWorkArea(display.workArea)
   // macOS refuses to move a visible-on-all-workspaces window across displays.
-  if (IS_MAC) overlay.setVisibleOnAllWorkspaces(false)
-  overlay.setBounds(display.workArea)
+  if (IS_MAC) state.overlay.setVisibleOnAllWorkspaces(false)
+  state.overlay.setBounds(display.workArea)
   if (IS_MAC) {
-    overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-    overlay.setAlwaysOnTop(true, 'screen-saver')
+    state.overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    state.overlay.setAlwaysOnTop(true, 'screen-saver')
   }
   const c = screen.getCursorScreenPoint()
-  send(overlay, 'display', {
+  send(state.overlay, 'display', {
     ...displayInfo(), reason,
     cursor: { x: c.x - display.workArea.x, y: c.y - display.workArea.y },
   })
@@ -268,15 +263,15 @@ function followCursorDisplay(reason) {
 }
 
 function raiseOverlay() {
-  if (!overlay || overlay.isDestroyed()) return
-  if (IS_MAC) overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  overlay.setAlwaysOnTop(true, 'screen-saver')
-  if (!overlay.isVisible()) overlay.showInactive()
-  overlay.moveTop()
+  if (!state.overlay || state.overlay.isDestroyed()) return
+  if (IS_MAC) state.overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  state.overlay.setAlwaysOnTop(true, 'screen-saver')
+  if (!state.overlay.isVisible()) state.overlay.showInactive()
+  state.overlay.moveTop()
 }
 
 function createPanel() {
-  panel = new BrowserWindow({
+  state.panel = new BrowserWindow({
     width: 380,
     height: 560,
     show: false,
@@ -287,13 +282,13 @@ function createPanel() {
     backgroundColor: '#1f1a17',
     webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false },
   })
-  const win = panel
+  const win = state.panel
   win.loadFile(path.join('renderer', 'panel.html'))
   win.on('close', (e) => { if (!app.isQuitting) { e.preventDefault(); win.hide() } })
   win.on('blur', () => { if (!panelPins.size && !win.webContents.isDevToolsOpened()) win.hide() })
   win.on('hide', () => retirePanelLater(win))
   win.on('show', () => clearTimeout(panelRetireTimer))
-  win.on('closed', () => { if (panel === win) { panel = null; panelPins.clear() } })
+  win.on('closed', () => { if (state.panel === win) { state.panel = null; panelPins.clear() } })
 }
 
 // The panel is made the first time it is opened and let go once it has been
@@ -306,7 +301,7 @@ let panelReady = null // the panel window whose page has loaded
 function retirePanelLater(win) {
   clearTimeout(panelRetireTimer)
   panelRetireTimer = setTimeout(() => {
-    if (win.isDestroyed() || win !== panel || app.isQuitting) return
+    if (win.isDestroyed() || win !== state.panel || app.isQuitting) return
     if (win.isVisible()) return
     if (panelPins.size) return retirePanelLater(win)
     win.destroy()
@@ -314,30 +309,30 @@ function retirePanelLater(win) {
 }
 
 function showPanel(tab) {
-  if (!panel) {
+  if (!state.panel) {
     createPanel()
-    const win = panel
+    const win = state.panel
     // once its page is ready (the tab message would be lost before that)
-    win.webContents.once('did-finish-load', () => { panelReady = win; if (win === panel) showPanel(tab) })
+    win.webContents.once('did-finish-load', () => { panelReady = win; if (win === state.panel) showPanel(tab) })
     return
   }
-  if (panelReady !== panel) return // still loading: it shows itself when ready
-  if (panel.isVisible() && panel.isFocused()) { if (tab) send(panel, 'panel-tab', tab); return }
+  if (panelReady !== state.panel) return // still loading: it shows itself when ready
+  if (state.panel.isVisible() && state.panel.isFocused()) { if (tab) send(state.panel, 'panel-tab', tab); return }
   const cursor = screen.getCursorScreenPoint()
   const { x, y, width, height } = screen.getDisplayNearestPoint(cursor).workArea
-  const [w, h] = panel.getSize()
+  const [w, h] = state.panel.getSize()
   const px = Math.min(Math.max(cursor.x - w / 2, x + 8), x + width - w - 8)
   const py = Math.min(Math.max(cursor.y - h - 16, y + 8), y + height - h - 8)
-  panel.setPosition(Math.round(px), Math.round(py))
-  if (tab) send(panel, 'panel-tab', tab)
-  panel.show()
-  panel.focus()
+  state.panel.setPosition(Math.round(px), Math.round(py))
+  if (tab) send(state.panel, 'panel-tab', tab)
+  state.panel.show()
+  state.panel.focus()
 }
 
 // Open (or bring forward) the panel. It only closes when it's already the
 // window you're looking at — a panel hidden behind other windows reopens.
 function togglePanel(tab) {
-  if (panel?.isVisible() && panel.isFocused() && !tab) panel.hide()
+  if (state.panel?.isVisible() && state.panel.isFocused() && !tab) state.panel.hide()
   else showPanel(tab)
 }
 
@@ -349,16 +344,16 @@ function send(win, channel, payload) {
 
 function snapshot() {
   return {
-    pending: tracker.pending(),
-    sessions: tracker.listSessions(),
-    working: tracker.workingCount(),
+    pending: state.tracker.pending(),
+    sessions: state.tracker.listSessions(),
+    working: state.tracker.workingCount(),
   }
 }
 
 function broadcastData() {
   const snap = snapshot()
-  send(overlay, 'data', snap)
-  send(panel, 'data', { ...snap, history: tracker.history })
+  send(state.overlay, 'data', snap)
+  send(state.panel, 'data', { ...snap, history: state.tracker.history })
   updateTray(snap)
   closeHandledSystemNotifications(snap.pending)
   watchFront()
@@ -366,8 +361,8 @@ function broadcastData() {
 }
 
 function broadcastSettings() {
-  send(overlay, 'settings', store.data.settings)
-  send(panel, 'settings', { ...store.data.settings, hotkeyOk })
+  send(state.overlay, 'settings', state.store.data.settings)
+  send(state.panel, 'settings', { ...state.store.data.settings, hotkeyOk: state.hotkeyOk })
   buildTrayMenu()
 }
 
@@ -377,29 +372,29 @@ function broadcastSettings() {
 // quiet) and, if asked for, a system notification goes out.
 function announce(notification) {
   // a task that finished quickly only raises the badge
-  const brief = isQuietDone(notification, store.data.settings.doneMin)
-  const quiet = store.data.settings.dnd || brief
+  const brief = isQuietDone(notification, state.store.data.settings.doneMin)
+  const quiet = state.store.data.settings.dnd || brief
   if (!quiet) {
     // roaming off: the pet stays on its screen and spot, it only alerts there
-    if (store.data.settings.roam) followCursorDisplay('notify')
+    if (state.store.data.settings.roam) followCursorDisplay('notify')
     raiseOverlay()
   }
   // tiny delay so a display move (if any) settles before the pet reacts
-  setTimeout(() => send(overlay, 'notify', brief ? { ...notification, quiet: true } : notification), 60)
-  if (store.data.settings.systemNotify && !quiet) showSystemNotification(notification)
+  setTimeout(() => send(state.overlay, 'notify', brief ? { ...notification, quiet: true } : notification), 60)
+  if (state.store.data.settings.systemNotify && !quiet) showSystemNotification(notification)
 }
 
 // Files the event needs (transcript, .git) are read off the main thread, so a
 // file that never opens can't freeze the app (#58).
 function onHookEvent(payload) {
-  return tracker.handleAsync(payload).then(({ notification, changed, type }) => {
+  return state.tracker.handleAsync(payload).then(({ notification, changed, type }) => {
     if (notification) {
       saveHistory()
       announce(notification)
     } else if (changed) {
       saveHistory()
     }
-    if (type === 'submit') send(overlay, 'session-busy', true)
+    if (type === 'submit') send(state.overlay, 'session-busy', true)
     broadcastData()
   }).catch((e) => console.error('[claude-bouncer] hook event failed:', e.message))
 }
@@ -411,10 +406,10 @@ let snoozeTimer = null
 function scheduleSnooze() {
   clearTimeout(snoozeTimer)
   snoozeTimer = null
-  const at = tracker.nextSnoozeAt()
+  const at = state.tracker.nextSnoozeAt()
   if (!at) return
   snoozeTimer = setTimeout(() => {
-    const due = tracker.dueSnoozes()
+    const due = state.tracker.dueSnoozes()
     if (due.length) {
       saveHistory()
       for (const n of due) announce(n)
@@ -455,7 +450,7 @@ function closeHandledSystemNotifications(pending) {
 
 // Going to a session answers all of its cards, not just the one clicked.
 function settleSession(sessionId) {
-  if (tracker.settle(sessionId, { read: true })) { saveHistory(); broadcastData() }
+  if (state.tracker.settle(sessionId, { read: true })) { saveHistory(); broadcastData() }
 }
 
 // ---------- clear cards when you switch to their terminal yourself ----------
@@ -482,14 +477,14 @@ function watchable(n) {
 
 function watchFront() {
   if (frontTimer) return
-  if (!IS_MAC || !tracker.pending().some(watchable)) { frontLast = null; frontFirst = true; return }
+  if (!IS_MAC || !state.tracker.pending().some(watchable)) { frontLast = null; frontFirst = true; return }
   frontTimer = setTimeout(async () => {
     try {
       if (powerMonitor.getSystemIdleTime() < WATCH_AWAY_SEC) {
-        const cards = tracker.pending().filter(watchable)
+        const cards = state.tracker.pending().filter(watchable)
         const front = await frontTerminal({ wantTab: (bundleId) => cards.some(n => terminalBundle(n.terminal) === bundleId) })
         if (frontChanged(frontLast, front)) {
-          const hit = tracker.pending().filter(n => watchable(n) && isFrontTerminal(n.terminal, front))
+          const hit = state.tracker.pending().filter(n => watchable(n) && isFrontTerminal(n.terminal, front))
           for (const id of new Set(hit.map(n => n.sessionId))) settleSession(id)
         }
         if (front) frontLast = front
@@ -518,10 +513,10 @@ function focusWebChat(t) {
 }
 
 async function openNotification(id) {
-  const n = tracker.find(id)
+  const n = state.tracker.find(id)
   if (!n) return
-  tracker.markRead(id)
-  tracker.settle(n.sessionId, { read: true })
+  state.tracker.markRead(id)
+  state.tracker.settle(n.sessionId, { read: true })
   saveHistory()
   broadcastData()
   if (n.terminal?.web) return focusWebChat(n.terminal)
@@ -551,7 +546,6 @@ const credsPath = () => path.join(app.getPath('userData'), 'higgsfield.json')
 
 // Preferred: sign in with the Higgsfield account over MCP (uses account credits).
 let hfMcp = null
-let hfCredits = null
 function mcp() {
   if (!hfMcp) {
     hfMcp = new HiggsfieldMcp({
@@ -583,12 +577,12 @@ function saveCreds(keyId, secret) {
 const presetSkin = presetLoader(path.join(__dirname, 'assets', 'presets'))
 
 function activeSkin() {
-  return resolveSkin(skinsStore.data, presetSkin)
+  return resolveSkin(state.skinsStore.data, presetSkin)
 }
 
 function broadcastSkin() {
-  send(overlay, 'skin', activeSkin())
-  send(panel, 'skins', skinState())
+  send(state.overlay, 'skin', activeSkin())
+  send(state.panel, 'skins', skinState())
 }
 
 // The saved key's id is plain text; only the secret needs the keychain.
@@ -602,14 +596,14 @@ function skinState() {
   const keyId = credsId()
   return {
     mcp: mcp().hasLogin,
-    credits: hfCredits,
+    credits: state.hfCredits,
     hasKey: !!keyId,
     keyId: keyId ? keyId.slice(0, 6) + '…' : '',
-    list: skinsStore.data.list,
+    list: state.skinsStore.data.list,
     // names only; the (large, never-changing) pixel data comes once via skin:presets
     presets: PRESETS.filter(p => presetSkin(p.id)).map(p => ({ id: p.id, name: p.name })),
-    active: skinsStore.data.active,
-    model: store.data.settings.skinModel,
+    active: state.skinsStore.data.active,
+    model: state.store.data.settings.skinModel,
     models: Object.keys(MODELS),
   }
 }
@@ -628,10 +622,10 @@ function preparePhoto(file) {
 async function generateSkin(file, style) {
   const photo = preparePhoto(file)
   const template = fs.readFileSync(path.join(__dirname, 'assets', 'skin-template.png'))
-  const onProgress = (stage) => send(panel, 'skin-progress', stage)
+  const onProgress = (stage) => send(state.panel, 'skin-progress', stage)
   if (mcp().signedIn) {
     const images = await mcp().makeCharacter({ photo, photoType: 'image/jpeg', template, style, variants: 2, onProgress })
-    mcp().balance().then(c => { hfCredits = c; send(panel, 'skins', skinState()) }).catch(() => {})
+    mcp().balance().then(c => { state.hfCredits = c; send(state.panel, 'skins', skinState()) }).catch(() => {})
     return images.map(b => 'data:image/png;base64,' + b.toString('base64'))
   }
   const creds = loadCreds()
@@ -639,9 +633,9 @@ async function generateSkin(file, style) {
   const hf = new Higgsfield(creds)
   const images = await hf.makeCharacter({
     photo, photoType: 'image/jpeg', template, style,
-    model: store.data.settings.skinModel,
+    model: state.store.data.settings.skinModel,
     variants: 2,
-    onProgress: (stage) => send(panel, 'skin-progress', stage),
+    onProgress: (stage) => send(state.panel, 'skin-progress', stage),
   })
   return images.map(b => 'data:image/png;base64,' + b.toString('base64'))
 }
@@ -669,18 +663,18 @@ function sendRequest({ email, subject, message, photo, consent }) {
 function summon() {
   followCursorDisplay('summon')
   raiseOverlay()
-  send(overlay, 'action', 'summon')
+  send(state.overlay, 'action', 'summon')
 }
 
 function registerHotkey() {
   globalShortcut.unregisterAll()
-  const acc = store.data.settings.hotkey
-  hotkeyOk = false
+  const acc = state.store.data.settings.hotkey
+  state.hotkeyOk = false
   if (acc) {
-    try { hotkeyOk = globalShortcut.register(acc, summon) } catch { hotkeyOk = false }
-    if (!hotkeyOk) console.error(`[claude-bouncer] hotkey ${acc} is taken or invalid`)
+    try { state.hotkeyOk = globalShortcut.register(acc, summon) } catch { state.hotkeyOk = false }
+    if (!state.hotkeyOk) console.error(`[claude-bouncer] hotkey ${acc} is taken or invalid`)
   }
-  return hotkeyOk
+  return state.hotkeyOk
 }
 
 // ---------- tray ----------
@@ -705,12 +699,12 @@ function updateTray(snap) {
 
 function petAction(action) {
   raiseOverlay()
-  send(overlay, 'action', action)
+  send(state.overlay, 'action', action)
 }
 
 function buildTrayMenu() {
   if (!tray) return
-  const s = store.data.settings
+  const s = state.store.data.settings
   const menu = Menu.buildFromTemplate([
     ...(update.latest ? [{
       label: update.installing ? `⬆ v${update.latest} 받는 중… ${Math.round(update.progress * 100)}%` : `⬆ 새 버전 v${update.latest}로 업데이트`,
@@ -718,7 +712,7 @@ function buildTrayMenu() {
       click: installUpdate,
     }, { type: 'separator' }] : []),
     { label: '알림 · 세션 패널', click: () => showPanel('inbox') },
-    { label: '펫 부르기', accelerator: hotkeyOk ? s.hotkey : undefined, registerAccelerator: false, click: summon },
+    { label: '펫 부르기', accelerator: state.hotkeyOk ? s.hotkey : undefined, registerAccelerator: false, click: summon },
     { type: 'separator' },
     ...actionMenuItems(petAction),
     { type: 'separator' },
@@ -777,23 +771,23 @@ function createTray() {
 // ---------- settings ----------
 
 function setSetting(key, value) {
-  if (!SETTING_RULES[key] || !SETTING_RULES[key](value)) return store.data.settings
-  const prev = store.data.settings[key]
-  store.data.settings[key] = value
+  if (!SETTING_RULES[key] || !SETTING_RULES[key](value)) return state.store.data.settings
+  const prev = state.store.data.settings[key]
+  state.store.data.settings[key] = value
   if (key === 'hotkey' && value && !registerHotkey()) {
     // keep the old, working shortcut instead of leaving none
-    store.data.settings[key] = prev
+    state.store.data.settings[key] = prev
     registerHotkey()
     broadcastSettings()
-    return { ...store.data.settings, hotkeyError: value }
+    return { ...state.store.data.settings, hotkeyError: value }
   }
   if (key === 'hotkey' && !value) registerHotkey()
-  store.save()
+  state.store.save()
   if (key === 'launchAtLogin') {
     try { app.setLoginItemSettings({ openAtLogin: value }) } catch {}
   }
   broadcastSettings()
-  return store.data.settings
+  return state.store.data.settings
 }
 
 // ---------- update check ----------
@@ -816,7 +810,7 @@ let updateRun = null
 function fetchUpdate() {
   if (updateRun) return updateRun
   update.checking = true
-  send(panel, 'update', updateState())
+  send(state.panel, 'update', updateState())
   updateRun = checkForUpdate(app.getVersion(), { fetchImpl: net.fetch })
     .then((r) => { update = { ...update, latest: r.newer ? r.latest : null, checking: false, error: false, checked: true } })
     .catch((e) => {
@@ -826,7 +820,7 @@ function fetchUpdate() {
     .finally(() => {
       updateRun = null
       buildTrayMenu()
-      send(panel, 'update', updateState())
+      send(state.panel, 'update', updateState())
     })
   return updateRun
 }
@@ -844,10 +838,10 @@ async function runUpdateCheck({ manual = false } = {}) {
       defaultId: found ? 1 : 0,
     })
     if (found && response === 1) installUpdate()
-  } else if (update.latest && store.data.update.notified !== update.latest && !store.data.settings.dnd && Notification.isSupported()) {
+  } else if (update.latest && state.store.data.update.notified !== update.latest && !state.store.data.settings.dnd && Notification.isSupported()) {
     // announced once per version; under Do Not Disturb it waits for a later check
-    store.data.update.notified = update.latest
-    store.save()
+    state.store.data.update.notified = update.latest
+    state.store.save()
     updateNotice = new Notification({ title: 'Claude Bouncer 새 버전', body: `v${update.latest} — 눌러서 업데이트해요.`, silent: true })
     updateNotice.on('click', installUpdate)
     updateNotice.show()
@@ -872,7 +866,7 @@ async function installUpdate() {
   const setProgress = (installing, progress = 0) => {
     update = { ...update, installing, progress }
     buildTrayMenu()
-    send(panel, 'update', updateState())
+    send(state.panel, 'update', updateState())
   }
   setProgress(true)
   let dir = null
@@ -899,8 +893,8 @@ async function installUpdate() {
       spawn(file, ['/S', '--force-run'], { detached: true, stdio: 'ignore' }).unref()
     }
     // checked on the next launch: still the old version means the swap failed
-    store.data.update.installing = version
-    store.flush()
+    state.store.data.update.installing = version
+    state.store.flush()
     app.isQuitting = true
     setTimeout(() => app.quit(), 300)
   } catch (e) {
@@ -935,10 +929,10 @@ async function cpuArch() {
 // After an update restart: say if the swap didn't happen (the script only
 // leaves a log line and reopens the old app).
 function reportLastInstall() {
-  const wanted = store.data.update.installing
+  const wanted = state.store.data.update.installing
   if (!wanted) return
-  store.data.update.installing = ''
-  store.save()
+  state.store.data.update.installing = ''
+  state.store.save()
   if (!isNewer(wanted, app.getVersion())) return
   dialog.showMessageBox({
     type: 'error',
@@ -967,25 +961,25 @@ function startFeeds() {
   let timer = null
   const tick = () => {
     let delay = 250
-    if (overlay && !overlay.isDestroyed() && workArea) {
+    if (state.overlay && !state.overlay.isDestroyed() && state.workArea) {
       const p = screen.getCursorScreenPoint()
-      const b = workArea
+      const b = state.workArea
       const inside = p.x >= b.x && p.y >= b.y && p.x < b.x + b.width && p.y < b.y + b.height
       const key = `${p.x},${p.y},${inside}`
       if (key !== last) {
         last = key
         movedAt = Date.now()
-        send(overlay, 'cursor', { x: p.x - b.x, y: p.y - b.y, inside })
+        send(state.overlay, 'cursor', { x: p.x - b.x, y: p.y - b.y, inside })
       }
-      delay = cursorPollMs({ tracking: cursorTracking, movedAgoMs: Date.now() - movedAt, quiet: away || store.data.settings.dnd })
+      delay = cursorPollMs({ tracking: state.cursorTracking, movedAgoMs: Date.now() - movedAt, quiet: away || state.store.data.settings.dnd })
     }
     timer = setTimeout(tick, delay)
   }
   // read right away (the pet just started following the cursor)
-  pokeCursor = () => { clearTimeout(timer); tick() }
+  state.pokeCursor = () => { clearTimeout(timer); tick() }
   tick()
 
-  const idle = (sec) => { away = sec > 60; send(overlay, 'idle', sec) }
+  const idle = (sec) => { away = sec > 60; send(state.overlay, 'idle', sec) }
   setInterval(() => idle(powerMonitor.getSystemIdleTime()), 4000)
   powerMonitor.on('lock-screen', () => idle(9999))
   powerMonitor.on('unlock-screen', () => idle(0))
@@ -1001,10 +995,10 @@ function registerIpc() {
   }))
   ipcMain.handle('ext:open-folder', () => openFolderSafely(extensionFolder()))
   ipcMain.handle('state:get', () => ({
-    settings: store.data.settings,
-    hotkeyOk,
+    settings: state.store.data.settings,
+    hotkeyOk: state.hotkeyOk,
     skin: activeSkin(),
-    pet: store.data.pet,
+    pet: state.store.data.pet,
     platform: process.platform,
     port: PORT,
     display: displayInfo(),
@@ -1016,68 +1010,68 @@ function registerIpc() {
   // sent synchronously from the overlay's beforeunload, so it lands before we exit
   ipcMain.on('pet:save-now', (e, pet) => {
     if (pet && typeof pet === 'object') {
-      store.data.pet = { ...store.data.pet, ...pet, best: { ...store.data.pet.best, ...(pet.best || {}) } }
-      store.flush()
+      state.store.data.pet = { ...state.store.data.pet, ...pet, best: { ...state.store.data.pet.best, ...(pet.best || {}) } }
+      state.store.flush()
     }
     e.returnValue = true
   })
   ipcMain.handle('pet:save', (_, pet) => {
     if (!pet || typeof pet !== 'object') return
-    store.data.pet = { ...store.data.pet, ...pet, best: { ...store.data.pet.best, ...(pet.best || {}) } }
-    store.save()
-    send(panel, 'pet', store.data.pet)
+    state.store.data.pet = { ...state.store.data.pet, ...pet, best: { ...state.store.data.pet.best, ...(pet.best || {}) } }
+    state.store.save()
+    send(state.panel, 'pet', state.store.data.pet)
   })
-  ipcMain.handle('settings:set', (_, key, value) => ({ ...setSetting(key, value), hotkeyOk }))
+  ipcMain.handle('settings:set', (_, key, value) => ({ ...setSetting(key, value), hotkeyOk: state.hotkeyOk }))
 
   ipcMain.on('mouse:ignore', (_, ignore) => {
-    if (!overlay || overlay.isDestroyed()) return
-    if (ignore) overlay.setIgnoreMouseEvents(true, { forward: true })
-    else overlay.setIgnoreMouseEvents(false)
+    if (!state.overlay || state.overlay.isDestroyed()) return
+    if (ignore) state.overlay.setIgnoreMouseEvents(true, { forward: true })
+    else state.overlay.setIgnoreMouseEvents(false)
   })
 
   // The overlay asks for the part of the work area its window should cover.
   // A request made for an earlier work area (the pet has since moved to
   // another screen) is dropped.
-  const fromOverlay = (e, v) => COMPACT_OVERLAY && overlay && !overlay.isDestroyed() && e.sender === overlay.webContents && v && v.epoch === viewEpoch
+  const fromOverlay = (e, v) => COMPACT_OVERLAY && state.overlay && !state.overlay.isDestroyed() && e.sender === state.overlay.webContents && v && v.epoch === state.viewEpoch
   ipcMain.handle('overlay:view', (e, v) => {
     if (!fromOverlay(e, v)) return false
-    const b = viewBounds(v, workArea)
+    const b = viewBounds(v, state.workArea)
     if (!b) return false
-    overlay.setBounds(b)
-    viewSize = b.width === workArea.width && b.height === workArea.height ? null : { width: b.width, height: b.height }
+    state.overlay.setBounds(b)
+    state.viewSize = b.width === state.workArea.width && b.height === state.workArea.height ? null : { width: b.width, height: b.height }
     return true
   })
   // the small window following the pet (same size, new place)
   ipcMain.on('overlay:move', (e, v) => {
-    if (!fromOverlay(e, v) || !viewSize) return
-    const b = viewBounds({ x: v.x, y: v.y, w: viewSize.width, h: viewSize.height }, workArea)
-    if (b) overlay.setPosition(b.x, b.y)
+    if (!fromOverlay(e, v) || !state.viewSize) return
+    const b = viewBounds({ x: v.x, y: v.y, w: state.viewSize.width, h: state.viewSize.height }, state.workArea)
+    if (b) state.overlay.setPosition(b.x, b.y)
   })
   ipcMain.on('cursor:track', (e, on) => {
-    if (!overlay || e.sender !== overlay.webContents) return
-    cursorTracking = !!on
-    if (cursorTracking) pokeCursor()
+    if (!state.overlay || e.sender !== state.overlay.webContents) return
+    state.cursorTracking = !!on
+    if (state.cursorTracking) state.pokeCursor()
   })
 
   ipcMain.handle('notif:open', (_, id) => openNotification(String(id)))
   ipcMain.handle('notif:dismiss', (_, id) => {
-    if (tracker.markRead(String(id))) { saveHistory(); broadcastData() }
+    if (state.tracker.markRead(String(id))) { saveHistory(); broadcastData() }
   })
   ipcMain.handle('notif:snooze', (_, id) => {
-    if (tracker.snooze(String(id), SNOOZE_MS)) { saveHistory(); broadcastData() }
+    if (state.tracker.snooze(String(id), SNOOZE_MS)) { saveHistory(); broadcastData() }
   })
-  ipcMain.handle('notif:readAll', () => { tracker.markAllRead(); saveHistory(); broadcastData() })
-  ipcMain.handle('history:get', () => ({ ...snapshot(), history: tracker.history }))
-  ipcMain.handle('history:clear', () => { tracker.clear(); saveHistory(); broadcastData() })
+  ipcMain.handle('notif:readAll', () => { state.tracker.markAllRead(); saveHistory(); broadcastData() })
+  ipcMain.handle('history:get', () => ({ ...snapshot(), history: state.tracker.history }))
+  ipcMain.handle('history:clear', () => { state.tracker.clear(); saveHistory(); broadcastData() })
   ipcMain.handle('session:focus', (_, id) => {
-    const s = tracker.listSessions().find(x => x.id === id)
+    const s = state.tracker.listSessions().find(x => x.id === id)
     if (s) settleSession(s.id)
     if (s?.terminal?.web) return focusWebChat(s.terminal)
     if (s) return focusTerminal({ terminal: s.terminal, cwd: s.cwd }, { openPath: openFolderSafely })
   })
 
   ipcMain.handle('panel:toggle', (_, tab) => togglePanel(tab))
-  ipcMain.handle('panel:close', () => panel?.hide())
+  ipcMain.handle('panel:close', () => state.panel?.hide())
   ipcMain.handle('display:follow', () => followCursorDisplay('follow'))
   ipcMain.handle('pet:action', (_, action) => action === 'summon' ? summon() : petAction(String(action)))
   // while the panel records a new shortcut, the old one must not fire
@@ -1102,19 +1096,19 @@ function registerIpc() {
   ipcMain.handle('skin:mcp-login', async () => {
     panelPins.add('login')
     try {
-      hfCredits = await mcp().login()
+      state.hfCredits = await mcp().login()
       return { ...skinState() }
     } catch (e) {
       return { ...skinState(), error: e.message }
     } finally {
       panelPins.delete('login')
-      panel?.show()
+      state.panel?.show()
     }
   })
-  ipcMain.handle('skin:mcp-logout', () => { mcp().logout(); hfCredits = null; return skinState() })
+  ipcMain.handle('skin:mcp-logout', () => { mcp().logout(); state.hfCredits = null; return skinState() })
   ipcMain.handle('skin:refresh', async () => {
     if (mcp().signedIn) {
-      try { hfCredits = await mcp().balance() } catch (e) { return { ...skinState(), error: e.message } }
+      try { state.hfCredits = await mcp().balance() } catch (e) { return { ...skinState(), error: e.message } }
     }
     return skinState()
   })
@@ -1129,7 +1123,7 @@ function registerIpc() {
   ipcMain.handle('skin:pick-photo', async () => {
     panelPins.add('dialog')
     try {
-      const r = await dialog.showOpenDialog(panel, {
+      const r = await dialog.showOpenDialog(state.panel, {
         title: '내 사진 고르기',
         properties: ['openFile'],
         filters: [{ name: '사진', extensions: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'] }],
@@ -1137,7 +1131,7 @@ function registerIpc() {
       return r.canceled ? null : r.filePaths[0]
     } finally {
       panelPins.delete('dialog')
-      panel?.show()
+      state.panel?.show()
     }
   })
   ipcMain.handle('skin:preview-photo', (_, file) => {
@@ -1149,32 +1143,32 @@ function registerIpc() {
   ipcMain.handle('skin:save', (_, skin, name) => {
     if (!validSkin(skin)) return skinState()
     const id = Date.now().toString(36)
-    const list = skinsStore.data.list
+    const list = state.skinsStore.data.list
     list.unshift({ id, name: String(name || '내 클로디').slice(0, 20), createdAt: Date.now(), skin })
     if (list.length > SKINS_MAX) list.length = SKINS_MAX
-    skinsStore.data.active = id
-    skinsStore.save()
+    state.skinsStore.data.active = id
+    state.skinsStore.save()
     broadcastSkin()
     return skinState()
   })
   ipcMain.handle('skin:use', (_, id) => {
-    const ok = !id || skinsStore.data.list.some(s => s.id === id) || !!presetSkin(id)
-    if (ok) { skinsStore.data.active = id || ''; skinsStore.save(); broadcastSkin() }
+    const ok = !id || state.skinsStore.data.list.some(s => s.id === id) || !!presetSkin(id)
+    if (ok) { state.skinsStore.data.active = id || ''; state.skinsStore.save(); broadcastSkin() }
     return skinState()
   })
   ipcMain.handle('skin:delete', (_, id) => {
-    skinsStore.data.list = skinsStore.data.list.filter(s => s.id !== id)
-    const wasActive = skinsStore.data.active === id
-    if (wasActive) skinsStore.data.active = ''
-    skinsStore.save()
+    state.skinsStore.data.list = state.skinsStore.data.list.filter(s => s.id !== id)
+    const wasActive = state.skinsStore.data.active === id
+    if (wasActive) state.skinsStore.data.active = ''
+    state.skinsStore.save()
     if (wasActive) broadcastSkin()
-    else send(panel, 'skins', skinState())
+    else send(state.panel, 'skins', skinState())
     return skinState()
   })
 
   ipcMain.on('menu:pet', () => {
-    const s = store.data.settings
-    if (IS_MAC) overlay.setAlwaysOnTop(true, 'floating')
+    const s = state.store.data.settings
+    if (IS_MAC) state.overlay.setAlwaysOnTop(true, 'floating')
     Menu.buildFromTemplate([
       ...actionMenuItems(petAction, { includeMenuOnly: true }),
       { type: 'separator' },
@@ -1188,8 +1182,8 @@ function registerIpc() {
     ]).popup({
       // the overlay sits above menus (screen-saver level); drop it while the
       // menu is open so the menu isn't hidden behind the pet
-      window: overlay,
-      callback: () => { if (overlay && !overlay.isDestroyed()) overlay.setAlwaysOnTop(true, 'screen-saver') },
+      window: state.overlay,
+      callback: () => { if (state.overlay && !state.overlay.isDestroyed()) state.overlay.setAlwaysOnTop(true, 'screen-saver') },
     })
   })
 }
@@ -1199,17 +1193,17 @@ function registerIpc() {
 app.whenReady().then(() => {
   if (IS_MAC && app.dock) app.dock.hide()
 
-  store = new JsonStore(path.join(app.getPath('userData'), 'state.json'), DEFAULTS)
-  skinsStore = new JsonStore(path.join(app.getPath('userData'), 'skins.json'), { list: [], active: '' })
+  state.store = new JsonStore(path.join(app.getPath('userData'), 'state.json'), DEFAULTS)
+  state.skinsStore = new JsonStore(path.join(app.getPath('userData'), 'skins.json'), { list: [], active: '' })
   // one-time move of looks saved inside state.json by earlier versions
-  if (store.data.skins.list.length && !skinsStore.data.list.length) {
-    skinsStore.data = { ...store.data.skins }
-    skinsStore.flush()
+  if (state.store.data.skins.list.length && !state.skinsStore.data.list.length) {
+    state.skinsStore.data = { ...state.store.data.skins }
+    state.skinsStore.flush()
   }
-  store.data.skins = { list: [], active: '' }
+  state.store.data.skins = { list: [], active: '' }
   historyStore = new JsonStore(path.join(app.getPath('userData'), 'history-v2.json'), { items: [] })
   // all file reads go through handleAsync; the synchronous readers stay unused
-  tracker = new SessionTracker({
+  state.tracker = new SessionTracker({
     history: historyStore.data.items, readTranscript: () => ({}), readGit: () => null,
     // which file hung (#58): kept in the app's log folder
     onSlowRead: (key) => {
@@ -1218,7 +1212,7 @@ app.whenReady().then(() => {
       fs.promises.mkdir(dir, { recursive: true }).then(() => fs.promises.appendFile(path.join(dir, 'slow-reads.log'), line)).catch(() => {})
     },
   })
-  if (!store.data.pet.bornAt) { store.data.pet.bornAt = Date.now(); store.save() }
+  if (!state.store.data.pet.bornAt) { state.store.data.pet.bornAt = Date.now(); state.store.save() }
 
   // Re-register the hook on every launch so it tracks the current binary location.
   syncHook()
@@ -1249,10 +1243,10 @@ app.whenReady().then(() => {
     if (!ids.includes(currentDisplayId)) { currentDisplayId = null; followCursorDisplay('display-removed') }
   })
   screen.on('display-metrics-changed', (_, d) => {
-    if (d.id === currentDisplayId && overlay) {
+    if (d.id === currentDisplayId && state.overlay) {
       setWorkArea(d.workArea)
-      overlay.setBounds(d.workArea)
-      send(overlay, 'display', { ...displayInfo(), reason: 'metrics' })
+      state.overlay.setBounds(d.workArea)
+      send(state.overlay, 'display', { ...displayInfo(), reason: 'metrics' })
     }
   })
 })
@@ -1268,13 +1262,13 @@ app.on('window-all-closed', (e) => { if (!app.isQuitting) e?.preventDefault?.() 
 app.on('will-quit', () => globalShortcut.unregisterAll())
 app.on('before-quit', () => {
   app.isQuitting = true
-  store?.flush()
+  state.store?.flush()
   historyStore?.flush()
-  skinsStore?.flush()
+  state.skinsStore?.flush()
 })
 // windows have closed by now (their last saves arrived): write again
 app.on('will-quit', () => {
-  store?.flush()
+  state.store?.flush()
   historyStore?.flush()
-  skinsStore?.flush()
+  state.skinsStore?.flush()
 })
