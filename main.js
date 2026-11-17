@@ -1,5 +1,5 @@
 const {
-  app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, shell, dialog,
+  app, BrowserWindow, ipcMain, nativeImage, screen, shell,
   Notification, powerMonitor, globalShortcut, safeStorage,
 } = require('electron')
 const path = require('path')
@@ -14,7 +14,6 @@ const { startServer, commandQueue } = require('./lib/server')
 const { Higgsfield, MODELS, DEFAULT_MODEL } = require('./lib/higgsfield')
 const { PRESETS, presetLoader, resolveSkin } = require('./lib/skins')
 const { requestSender } = require('./lib/request')
-const { actionMenuItems } = require('./lib/actions')
 const { HiggsfieldMcp } = require('./lib/higgsfield-mcp')
 const state = require('./main/app-state')
 const { registerAppIpc } = require('./main/ipc/app')
@@ -22,6 +21,7 @@ const { registerNotificationIpc } = require('./main/ipc/notifications')
 const { registerOverlayIpc } = require('./main/ipc/overlay')
 const { registerSkinIpc } = require('./main/ipc/skins')
 const { createUpdateFlow } = require('./main/update-flow')
+const { createMenus } = require('./main/menus')
 
 const IS_MAC = process.platform === 'darwin'
 
@@ -70,7 +70,6 @@ const DEFAULTS = {
 // store, skinsStore, tracker, the windows and the overlay view live in
 // main/app-state.js (other files in main/ use them too)
 let historyStore
-let tray = null
 let currentDisplayId = null
 // The overlay window covers the whole work area only while it has to (cards,
 // menu, games). Otherwise it is a small window that follows the pet; the
@@ -678,119 +677,23 @@ function registerHotkey() {
   return state.hotkeyOk
 }
 
-// ---------- tray ----------
-
-function trayIcon() {
-  const img = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'))
-  if (!img.isEmpty()) return img
-  return nativeImage.createFromPath(path.join(__dirname, 'assets', 'claudecode-color.png')).resize({ width: 18, height: 18 })
-}
-
-function updateTray(snap) {
-  if (!tray) return
-  const needs = snap.pending.filter(n => n.kind !== 'done').length
-  const done = snap.pending.length - needs
-  if (IS_MAC) tray.setTitle(needs ? ` ❗${needs}` : done ? ` ${done}` : '')
-  const parts = []
-  if (needs) parts.push(`응답 필요 ${needs}`)
-  if (done) parts.push(`새 완료 ${done}`)
-  if (snap.working) parts.push(`작업 중 ${snap.working}`)
-  tray.setToolTip(`Claude Bouncer${parts.length ? ' — ' + parts.join(', ') : ''}`)
-}
+// ---------- update flow, tray and pet menus ----------
 
 function petAction(action) {
   raiseOverlay()
   send(state.overlay, 'action', action)
 }
 
-function buildTrayMenu() {
-  if (!tray) return
-  const s = state.store.data.settings
-  const u = updateState()
-  const menu = Menu.buildFromTemplate([
-    ...(u.latest ? [{
-      label: u.installing ? `⬆ v${u.latest} 받는 중… ${Math.round(u.progress * 100)}%` : `⬆ 새 버전 v${u.latest}로 업데이트`,
-      enabled: !u.installing,
-      click: installUpdate,
-    }, { type: 'separator' }] : []),
-    { label: '알림 · 세션 패널', click: () => showPanel('inbox') },
-    { label: '펫 부르기', accelerator: state.hotkeyOk ? s.hotkey : undefined, registerAccelerator: false, click: summon },
-    { type: 'separator' },
-    ...actionMenuItems(petAction),
-    { type: 'separator' },
-    { label: '방해 금지', type: 'checkbox', checked: s.dnd, click: (i) => setSetting('dnd', i.checked) },
-    { label: '집중 모드', type: 'checkbox', checked: s.focus, click: (i) => setSetting('focus', i.checked) },
-    { label: '돌아다니기', type: 'checkbox', checked: s.roam, click: (i) => setSetting('roam', i.checked) },
-    {
-      label: '테스트 알림',
-      submenu: [
-        { label: '작업 완료', click: () => testNotification('done') },
-        { label: '권한 요청', click: () => testNotification('permission') },
-      ],
-    },
-    {
-      label: 'Claude Code 훅',
-      submenu: [
-        {
-          label: '다시 설치',
-          click: () => {
-            const r = syncHook()
-            dialog.showMessageBox({
-              type: r ? 'info' : 'error',
-              message: r ? `훅 설치 완료: ${r.installed.join(', ')}` : '훅 설치에 실패했어요.',
-              detail: r ? r.settingsPath : undefined,
-            })
-          },
-        },
-        {
-          label: '제거',
-          click: async () => {
-            const { response } = await dialog.showMessageBox({
-              type: 'warning', buttons: ['취소', '제거'], defaultId: 0, cancelId: 0,
-              message: 'Claude Code 설정에서 claude-bouncer 훅을 제거할까요?',
-              detail: '앱을 다시 켜면 자동으로 다시 설치돼요.',
-            })
-            if (response !== 1) return
-            const r = syncHook({ uninstall: true })
-            dialog.showMessageBox({ type: r ? 'info' : 'error', message: r ? `훅 ${r.removed}개를 제거했어요.` : '제거에 실패했어요.' })
-          },
-        },
-      ],
-    },
-    { label: `업데이트 확인 (v${app.getVersion()})`, click: () => runUpdateCheck({ manual: true }) },
-    { type: 'separator' },
-    { label: '클로디 종료', click: () => { app.isQuitting = true; app.quit() } },
-  ])
-  tray.setContextMenu(menu)
-}
+// main/update-flow.js; the tray menu is rebuilt whenever the update status changes
+const { updateState, runUpdateCheck, installUpdate, startUpdateChecks } = createUpdateFlow({
+  send, onChange: () => buildTrayMenu(),
+})
 
-function createTray() {
-  tray = new Tray(trayIcon())
-  buildTrayMenu()
-  updateTray(snapshot())
-}
-
-// the pet's right-click menu (asked for by the overlay)
-function showPetMenu() {
-  const s = state.store.data.settings
-  if (IS_MAC) state.overlay.setAlwaysOnTop(true, 'floating')
-  Menu.buildFromTemplate([
-    ...actionMenuItems(petAction, { includeMenuOnly: true }),
-    { type: 'separator' },
-    { label: '알림 · 세션 패널', click: () => showPanel('inbox') },
-    { label: '펫 상태', click: () => showPanel('pet') },
-    { label: '방해 금지', type: 'checkbox', checked: s.dnd, click: (i) => setSetting('dnd', i.checked) },
-    { label: '집중 모드', type: 'checkbox', checked: s.focus, click: (i) => setSetting('focus', i.checked) },
-    { label: '돌아다니기', type: 'checkbox', checked: s.roam, click: (i) => setSetting('roam', i.checked) },
-    { type: 'separator' },
-    { label: '클로디 종료', click: () => { app.isQuitting = true; app.quit() } },
-  ]).popup({
-    // the overlay sits above menus (screen-saver level); drop it while the
-    // menu is open so the menu isn't hidden behind the pet
-    window: state.overlay,
-    callback: () => { if (state.overlay && !state.overlay.isDestroyed()) state.overlay.setAlwaysOnTop(true, 'screen-saver') },
-  })
-}
+// main/menus.js (made after the update flow: the tray menu shows its status)
+const { createTray, buildTrayMenu, updateTray, showPetMenu } = createMenus({
+  showPanel, summon, petAction, setSetting, testNotification, syncHook, snapshot,
+  updateState, installUpdate, runUpdateCheck,
+})
 
 // ---------- settings ----------
 
@@ -813,13 +716,6 @@ function setSetting(key, value) {
   broadcastSettings()
   return state.store.data.settings
 }
-
-// ---------- update check ----------
-
-// main/update-flow.js; the tray menu is rebuilt whenever the status changes
-const { updateState, runUpdateCheck, installUpdate, startUpdateChecks } = createUpdateFlow({
-  send, onChange: () => buildTrayMenu(),
-})
 
 // ---------- cursor / idle feed for the pet ----------
 
