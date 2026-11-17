@@ -1,6 +1,7 @@
 // Loads main.js with a fake `electron`, runs app.whenReady and checks the
 // wiring that the main/ split must keep: the IPC channels, that every handler
-// survives a harmless call, and the tray / pet menu items in order.
+// survives a harmless call, the tray / pet menu items in order, and that
+// every channel answers the app's own windows only (main/ipc/guard.js).
 // Nothing real is touched: HOME and userData point into .work/test-main-ipc,
 // the hook installer and the local server are stubbed, every fetch fails, and
 // long timers (update checks, idle feed) never run.
@@ -22,7 +23,6 @@ process.env.USERPROFILE = process.env.HOME
 
 // Any electron object we don't model: every property is another fake and
 // every call / `new` returns one, so code can chain on it freely.
-const wins = []
 function fake(name) {
   const kids = new Map()
   return new Proxy(function () {}, {
@@ -36,15 +36,13 @@ function fake(name) {
       return kids.get(k)
     },
     apply: () => fake(`${name}()`),
-    construct: () => {
-      const w = fake(`new ${name}`)
-      wins.push(w)
-      return w
-    },
+    construct: () => fake(`new ${name}`),
   })
 }
 
 const noNetwork = () => Promise.reject(new Error('no network in tests'))
+const guarded = new Set() // 'kind channel' registered through guardIpc
+const passed = [] // channels whose handler the guard let through
 const registered = [] // [kind, channel] in registration order
 const handlers = new Map()
 const listeners = new Map()
@@ -103,6 +101,22 @@ Module._load = function (req, parent, isMain) {
   if (resolved === path.join(ROOT, 'lib', 'server.js')) {
     return { ...realLoad.apply(this, arguments), startServer: () => {} }
   }
+  // Watch main/ipc/guard.js: which channels go through it, and which of them
+  // reached the handler behind it (`passed`, in call order).
+  if (resolved === path.join(ROOT, 'main', 'ipc', 'guard.js')) {
+    const real = realLoad.apply(this, arguments)
+    return {
+      ...real,
+      guardIpc: (ipc, ...rest) => {
+        const g = real.guardIpc(ipc, ...rest)
+        const watch = (kind) => (ch, fn) => {
+          guarded.add(`${kind} ${ch}`)
+          g[kind](ch, (...a) => { passed.push(ch); return fn(...a) })
+        }
+        return { handle: watch('handle'), on: watch('on') }
+      },
+    }
+  }
   // would run lsappinfo / osascript against the real terminal apps
   if (resolved === path.join(ROOT, 'lib', 'focus.js')) {
     return { ...realLoad.apply(this, arguments), focusTerminal: async () => false, activateApp: async () => false, frontTerminal: async () => null }
@@ -155,14 +169,17 @@ const ARGS = {
 }
 // starts the Higgsfield browser login and a callback server on a fixed port
 const SKIP = new Set(['skin:mcp-login'])
-// these accept messages from the overlay window only
-const FROM_OVERLAY = new Set(['overlay:view', 'overlay:move', 'cursor:track'])
 
 // a promise result gets 300 ms to settle; its outcome is not checked
 const settle = (r) => Promise.race([Promise.resolve(r).catch(() => {}), new Promise(res => real.setTimeout(res, 300))])
 
 // '---' for a separator, [label, [...submenu]] for a submenu
 const labels = (tpl) => tpl.map(i => (i.type === 'separator' ? '---' : i.submenu ? [i.label, labels(i.submenu)] : i.label))
+
+const state = require(path.join(ROOT, 'main', 'app-state'))
+const allChannels = () => [...[...handlers].map(([ch, fn]) => ['handle', ch, fn]), ...[...listeners].map(([ch, fn]) => ['on', ch, fn])]
+// a message as the overlay window sends it
+const fromOverlay = () => ({ sender: state.overlay.webContents, senderFrame: { parent: null }, returnValue: undefined })
 
 test.before(async () => {
   require(path.join(ROOT, 'main.js'))
@@ -201,7 +218,7 @@ test('tray and pet menus keep their items in order', async () => {
   ])
 
   const before = menus.length
-  listeners.get('menu:pet')({ sender: {}, returnValue: undefined })
+  listeners.get('menu:pet')(fromOverlay())
   assert.strictEqual(menus.length, before + 1, 'menu:pet builds one menu')
   assert.deepStrictEqual(labels(menus[before]), [
     ...actions, '💤 재우기', '---',
@@ -213,15 +230,87 @@ test('tray and pet menus keep their items in order', async () => {
 
 test('every handler survives a harmless call without a synchronous throw', async () => {
   const thrown = []
-  const all = [...[...handlers].map(([ch, fn]) => ['handle', ch, fn]), ...[...listeners].map(([ch, fn]) => ['on', ch, fn])]
-  for (const [kind, ch, fn] of all) {
+  for (const [kind, ch, fn] of allChannels()) {
     if (SKIP.has(ch)) continue
     for (const args of ARGS[ch] || [[]]) {
-      const e = { sender: FROM_OVERLAY.has(ch) ? wins[0].webContents : {}, returnValue: undefined }
+      const e = fromOverlay()
       let r
       try { r = fn(e, ...args) } catch (err) { thrown.push(`${kind} ${ch} ${JSON.stringify(args)}: ${err.message}`); continue }
       await settle(r)
     }
   }
   assert.deepStrictEqual(thrown, [])
+})
+
+test('every IPC channel is registered through the sender guard', () => {
+  assert.deepStrictEqual(registered.map(([kind, ch]) => `${kind} ${ch}`).filter(n => !guarded.has(n)), [])
+  assert.strictEqual(guarded.size, 44)
+})
+
+test('messages from the app windows reach every handler', async () => {
+  // the harmless-call test above sent each channel from the overlay
+  const reached = new Set(passed)
+  assert.deepStrictEqual(allChannels().map(([, ch]) => ch).filter(ch => !SKIP.has(ch) && !reached.has(ch)), [])
+
+  // the panel window counts too (made by panel:toggle above)
+  assert.ok(state.panel, 'the panel window exists')
+  const before = passed.length
+  const r = await handlers.get('state:get')({ sender: state.panel.webContents, senderFrame: { parent: null } })
+  assert.deepStrictEqual(passed.slice(before), ['state:get'])
+  assert.ok(r && r.settings, 'the panel gets the state')
+})
+
+test('messages from any other sender are turned away on every channel', async () => {
+  const strangers = {
+    'an unknown webContents': () => ({ sender: {} }),
+    'no sender': () => ({ sender: null }),
+    'a frame inside the overlay': () => ({ sender: state.overlay.webContents, senderFrame: { parent: {} } }),
+    'a frame inside the panel': () => ({ sender: state.panel.webContents, senderFrame: { parent: {} } }),
+  }
+  const settings = JSON.stringify(state.store.data.settings)
+  const before = passed.length
+  const leaked = []
+  for (const [who, make] of Object.entries(strangers)) {
+    for (const [kind, ch, fn] of allChannels()) {
+      const e = { ...make(), returnValue: undefined }
+      const r = await fn(e, ...((ARGS[ch] || [[]])[0]))
+      if (kind === 'handle' && r !== undefined) leaked.push(`${who}: ${ch} answered`)
+      if (kind === 'on' && e.returnValue !== null) leaked.push(`${who}: ${ch} left returnValue unset`)
+    }
+  }
+  assert.deepStrictEqual(leaked, [])
+  assert.deepStrictEqual(passed.slice(before), [], 'no handler ran')
+  assert.strictEqual(JSON.stringify(state.store.data.settings), settings, 'settings unchanged')
+})
+
+test('a window that is gone no longer counts as the app', async () => {
+  const gone = { webContents: {}, isDestroyed: () => true }
+  const saved = state.panel
+  state.panel = gone
+  try {
+    const before = passed.length
+    const r = await handlers.get('state:get')({ sender: gone.webContents })
+    assert.strictEqual(r, undefined)
+    assert.deepStrictEqual(passed.slice(before), [])
+  } finally {
+    state.panel = saved
+  }
+})
+
+test('the shared state takes new values but no new fields', () => {
+  'use strict'
+  assert.ok(Object.isSealed(state))
+  const saved = state.hfCredits
+  state.hfCredits = 42
+  assert.strictEqual(state.hfCredits, 42)
+  state.hfCredits = saved
+  assert.throws(() => { state.hfCredit = 1 }, TypeError)
+  assert.throws(() => { delete state.hfCredits }, TypeError)
+  assert.ok(!('hfCredit' in state))
+})
+
+test('the platform check lives in main/platform.js only', () => {
+  const files = ['main.js', ...fs.readdirSync(path.join(ROOT, 'main'), { recursive: true }).filter(f => f.endsWith('.js')).map(f => path.join('main', f))]
+  const found = files.filter(f => /process\.platform\s*===\s*'darwin'/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')))
+  assert.deepStrictEqual(found, [path.join('main', 'platform.js')])
 })

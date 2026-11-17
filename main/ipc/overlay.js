@@ -1,3 +1,4 @@
+'use strict'
 // IPC from the overlay window: click-through, the small window that follows
 // the pet, cursor tracking, moving to the cursor's screen, pet actions and
 // the right-click menu. Registered once from main.js (registerIpc). The

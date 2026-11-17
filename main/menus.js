@@ -1,3 +1,4 @@
+'use strict'
 // The menu-bar (tray) icon with its menu, and the pet's right-click menu.
 // The tray icon is owned here; main.js calls createTray() once at start,
 // updateTray(snapshot) when cards change and buildTrayMenu() when settings or
@@ -7,8 +8,8 @@ const { app, Tray, Menu, nativeImage, dialog } = require('electron')
 const path = require('path')
 const { actionMenuItems } = require('../lib/actions')
 const state = require('./app-state')
+const { IS_MAC } = require('./platform')
 
-const IS_MAC = process.platform === 'darwin'
 const ASSETS = path.join(__dirname, '..', 'assets')
 
 function createMenus({

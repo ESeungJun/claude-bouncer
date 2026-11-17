@@ -1,3 +1,4 @@
+'use strict'
 // IPC for custom looks (pet tab): the Higgsfield login/key, picking and
 // previewing a photo, making a look, saving / using / deleting looks, and the
 // "make one for me" request. Registered once from main.js (registerIpc),
